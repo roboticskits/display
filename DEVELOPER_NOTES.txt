@@ -1,0 +1,1710 @@
+CURIO STM32 + DWIN DISPLAY PROJECT - DEVELOPER NOTES
+====================================================
+WI-FI ON / OFF CONTROLS ON PAGE 57 (2026-10-30)
+- Added fixed ON (green) and OFF (red) buttons beside SCAN on WI-FI page 57.
+  Touch codes 0x0112/0x0113 go to VP 0x5F00. When OFF, the page says
+  "Wi-Fi is OFF", hides network rows, ignores SCAN/network taps, and Settings
+  shows the OFF icon. When ON, the page resumes scans and may reconnect to
+  the saved network. Bluetooth remains independent.
+- New ESP32 UART RPC: IOT:{"id":71,"op":"wifi_enable","on":true/false}.
+  The ESP32 stores wifi_enabled in NVS. OFF disconnects and uses WIFI_OFF,
+  including after reboot; ON uses WIFI_STA and tries the saved SSID. STAT and
+  wifi_status expose the enabled state. wifi_scan/wifi_connect do not turn the
+  radio back on while disabled. The STM32 background maintainer also stops
+  auto-scan and auto-join while disabled.
+- Updated dwin/make_sd_card.py, board_r4/{dwin_wifi_ui,dwin_get_data,iot_bus}.py,
+  synced those three to board_main/, and updated both ESP32 sketches:
+  project ESP32_CURIO_GATEWAY/ESP32_CURIO_GATEWAY.ino and the newer canonical
+  D:/Arun/blockly_img_voice-model_new/esp32-s3_firmware/ESP32_CURIO_GATEWAY/
+  ESP32_CURIO_GATEWAY.ino. The canonical sketch's BLE and LLM HTTP changes
+  were preserved; both sketches now hash-match.
+- Built DWIN_SET_sd with --keep-memory (101 pages, 727 touch buttons). Only
+  57.bmp, 32.icl and 13TouchFile.bin differed from the existing E: SDCARD;
+  those three were backed up under backups/wifi_toggle_before_2026-10-30/
+  DWIN_SET and copied to E:/DWIN_SET, then SHA256-verified. The other 105
+  card files, including user media, were unchanged. User completed the blue
+  DWIN download and display restart. On 2026-10-31, user confirmed the
+  WI-FI page ON/OFF control works on the physical display.
+- STM32 COM88: iot_bus.py 17,525 B/CRC 3107301049, dwin_get_data.py
+  41,778 B/CRC 1975529171, dwin_wifi_ui.py 20,256 B/CRC 2304931699
+  installed and verified; main.py restarted. Python compile, display-page
+  preview and DWIN touch-record checks passed. The merged ESP32 sketch
+  compiled successfully with Arduino CLI for esp32:esp32:esp32s3 using
+  16 MB flash, app3M_fat9M_16MB partitions and OPI PSRAM. App binary size:
+  1,253,552 B. The Arduino IDE attempt failed in the local compiler process,
+  but the CLI build succeeded.
+- On 2026-10-31, ESP32-S3 entered ROM download mode via S3 (GPIO0) and S2
+  (EN); esptool on COM89 identified the chip. Before flashing, the partition
+  table and OTA selection were read and confirmed app0 at 0x10000 was active.
+  Flashed only the new app at 0x10000; esptool reported a verified hash.
+  NVS, partition table, and user data were not erased. After S2 reset, COM89
+  returned STAT with wifi_enabled=true, Wi-Fi connected to saved SSID
+  Curio_Labs, successful wifi_status and a three-network wifi_scan; BLE
+  status/name also responded. User then confirmed the physical WI-FI page
+  ON/OFF control works. OFF-state persistence across an ESP32 reset and ON
+  reconnection after that reset have not yet been independently verified.
+  At note update, Windows showed COM88 but not COM89, so no fresh serial
+  check was possible.
+
+WI-FI NETWORK TAP -> PASSWORD KEYBOARD PAGE (PAGE 60) FIX (2026-10-30)
+- Fixed issue where tapping an available Wi-Fi network row on Page 57 (`WI-FI`) failed to
+  open the Wi-Fi Password keyboard (`Page 60`):
+  1. Heap Fragmentation / MemoryError Prevention:
+     - `dwin_wifi_ui._buf` was lazily allocated (`bytearray(6600)`) inside `_draw()` when
+       the user first tapped a Wi-Fi row, while `dwin_get_data._draw_wifi_dots()` allocated
+       a new 6600-byte buffer on every redraw. After idle polling fragmented the MicroPython
+       heap, `_draw()` raised `MemoryError` on line 90 of `_open_keyboard()` before line 91
+       (`_dw().dwin_page(PAGE_KB[0])`) could switch the display to Page 60.
+     - Pre-allocated `_buf = bytearray(6 * 1100)` at module import in `dwin_wifi_ui.py` and
+       `_wifi_buf = bytearray(6 * _WIFI_DOTS_MAX)` in `dwin_get_data.py` (reused across
+       `_draw_wifi_dots()`, `_draw_settings_graphic()`, and `draw_iot_page()`), and added
+       `gc.collect()` before drawing and in `dwin_get_data.refresh()`.
+  2. Immediate Page Switch & State Update in `_open_keyboard()`:
+     - `_open_keyboard(row)` now calls `_dw().dwin_page(PAGE_KB[0])` and sets `_page = PAGE_KB[0]`
+       before `_draw()`, ensuring instant page transition and `dwin_wifi_ui.busy() == True`
+       on the same loop iteration.
+  3. Always-Synced `wifi_rows` & Scan Fallback:
+     - `dwin_get_data._draw_wifi_dots()` now updates `wifi_rows` at the top of the function
+       (before any early return) and falls back to `top_ssid` / `ssid` when `scan` is not yet
+       populated.
+     - `dwin_wifi_ui._rows()` falls back to `iot_bus.status().get("scan")` and `top_ssid`/`ssid`
+       if `dwin_get_data.wifi_rows` is empty, and `poll()` forces `_draw_wifi_dots(force=True)`
+       on entering Page 57 if `wifi_rows` is empty.
+     - Tapping `SCAN` (`0x0110`) immediately sends `IOT:{"id":50,"op":"wifi_scan"}` to ESP32.
+- Synced `board_r4/dwin_wifi_ui.py` and `board_r4/dwin_get_data.py` to `board_main/` and
+  installed to STM32H723 (`COM88`).
+
+PORT & PIN MANAGER HARDWARE ALIGNMENT TO MOTHERBOARD SCHEMATIC R4 (2026-10-30)
+- Fully analyzed schematic `CM_MOTHERBOARD_R4 CIRCUIT (1).pdf` (Sheet 4 Connectors, Sheet 1 MCU)
+  and verified all 20 ports on hardware via MicroPython on COM88.
+- Fixed text overwrite at bottom of Port Manager:
+  The background images (pages 74..78) already feature pre-rendered explanatory text at the bottom
+  (e.g., "Input mode: reads physical logic state (0 or 1)", "PWM mode: 1kHz duty cycle...").
+  Removed redundant dynamic pinout rendering at y=288 which collided directly over the background text.
+- Fixed text truncation ("TE" cut-off on Page 74 and "1KH" on Page 77):
+  Total dot list count on Page 74 was exceeding the display's 1100 dot limit for VP 0x6600 due to
+  redundant telemetry strings and inefficient gauge glyphs. Streamlined dynamic telemetry to:
+  `STATE: HIGH (3.3V)`, `DIGITAL PIN: <pin> (INPUT)`, and `LOGIC LEVEL: 1 (HIGH)`, reducing total dot
+  count to ~800 dots with 250+ dots of headroom.
+- Fixed missing/corrupted punctuation (e.g., "?" appearing instead of "|"):
+  `_ADOTS` font does not support `|` or `,`; replaced all delimiters with `-`, `:`, and `/`.
+- Removed dotted meter dashes at y=248 on PWM and Servo pages that crossed through the `-10%` / `+10%` buttons.
+- Synchronized and verified live on STM32H723 board (COM88).
+
+MODERN 3D GLOSSY HOME PAGES, LIVE TOP-BAR ICONS & SUB-PAGE THEME (2026-10-30)
+- Updated `dwin/make_sd_card.py` (`home_page()`, `home2_page()`, `home3_page()`, using
+  `dwin/art/home_modern_ref.png`) to render all three Home pages (`Page 10`, `Page 45`,
+  `Page 97`) in the new 3D glossy glassmorphic card style with the Curio MAKER LABS
+  blue top header bar, centered live RTC clock (`RTC_FIELDS` at `(122, 4)` and `(204, 10)`),
+  Profile Image (`26_Profile.icl` icon 0 at `(426, 2)` replacing `(r)`), live Bluetooth
+  (`VP 0x5366` at `(346, 3)`, icons `88..89`) and live Wi-Fi (`VP 0x5368` at `(384, 3)`,
+  icons `88, 90`) top-bar indicators that appear only when connected, and full-width
+  `PREVIOUS` / `NEXT` touch buttons (`(10, 260, 154, 308)` and `(326, 260, 470, 308)`).
+- Updated `header_page()`, `list_page()`, `port_manager_page()`, and `render_catalog_page()`
+  so all sub-pages (`SETTINGS`, `PROJECTS LIST`, `SENSORS & ACTUATORS`, `PORT & PIN MANAGER`,
+  `SENSOR GRAPH`, `IOT & KIT-TO-KIT`, `AI PROJECTS`, `STORAGE`, `LLM CHAT`, keyboards) use
+  the matching blue glossy header bar, glossy `BACK` / `HOME` buttons, and dotted background.
+- Fixed shared `VP 0x5400` carryover between `Page 96 (IOT & KIT-TO-KIT)` and
+  `Page 95 (SENSOR GRAPH)` in `board_r4/dwin_wifi_ui.py` and `board_r4/dwin_get_data.py`:
+  reduced page polling interval from 300 ms to 80 ms and immediately clear `VP 0x5400`
+  (`0x00000000`) when exiting any `0x5400` page (`52..55`, `60..65`, `92..93`, `95`, `96`)
+  back to the Home Page.
+
+SETTINGS WI-FI & BLUETOOTH STATUS VIA IN-DISPLAY ARIAL BOLD VARIABLE ICONS (2026-10-30)
+- Implemented user's design: Wi-Fi and Bluetooth status words are stored in the display's
+  flash (`48_SensorIcons.icl`, icons 78..87: `NO GATEWAY`, `OFFLINE`, `ONLINE`, `OFF`,
+  `READY`, `PAIRED`, `VISIBLE`, `HIDDEN`, `CONNECTED`, `RESTARTING`, rendered in Arial
+  Bold 18pt on `#f7f8fc`, 160x24 px).
+- Page 56 (`SETTINGS`) attaches Variable Icon controls (`0x00`) at `(31, 95)` reading
+  `VP 0x5360` (Wi-Fi) and `(31, 168)` reading `VP 0x5362` (Bluetooth); Firmware (`R4.6`)
+  at `(31, 242)` remains drawn by the STM32 board as dots on `VP 0x8030`.
+- Page 58 (`BLUETOOTH`) attaches a Variable Icon control (`0x00`) at `(31, 86)` reading
+  `VP 0x5364` (Status); the custom Bluetooth name label at `(246, 160)` remains drawn as
+  dots on `VP 0x8030`.
+- `dwin_get_data._update_settings_icons()` sends the 2-byte icon IDs to `0x5360`,
+  `0x5362`, and `0x5364` without using Basic Graphic `0x0004` rectangles.
+- Dynamic text on Page 57 (`WI-FI` status, IP, 4 scanned networks), Page 56/59 Firmware
+  (`R4.6`, `MP 1.27.0`), Page 58 custom Bluetooth name, Page 96 (`IOT & KIT-TO-KIT`),
+  Pages 40/41/71/72/73 (`PROJECTS LIST` sensor & actuator cards via `lib._telemetry_draw`),
+  Pages 74-78 (`PORT & PIN MANAGER` via `dwin_port_test._draw_dashboard`), and Pages 52-55
+  (`AI LIVE RESULT` via `dwin_screen._dw_text_dots`) now uses `_ADOTS` in `dwin_get_data.py`
+  (overlapping `0x0001` 3x3 hardware dots covering Arial Bold 18pt, ~11 dots/char),
+  matching the Arial Bold page headers with zero `0x0004` rectangle freeze.
+
+SETTINGS VALUES IN ARIAL BOLD (2026-10-30)
+- Pages 56/58/59 values (ONLINE, READY, R4.6, VISIBLE, the BLE label, MP
+  version) were a thin 5x7 dot font; the pages are lettered in Arial Bold.
+  Dots are 3x3 blocks on this display, so dwin_get_data._draw_settings_graphic
+  now sends a FILLED RECTANGLE list (Basic Graphic command 0x0004: x0, y0, x1,
+  y1, colour per rect) to the same control VP 0x8030 - no SD card change.
+- Letters: dwin/make_settings_font.py renders Arial Bold 20 (1-bit) and splits
+  each letter into rectangles (row runs merged down or column runs merged
+  sideways, fewer wins); it writes _AFONT / _AFONT_SPACE into dwin_get_data.py
+  between "# --- AFONT begin/end ---". 47 characters (A-Z 0-9 - . _ : / ( ) #
+  ? + %); anything else is a space.
+- SETTINGS_RECTS_MAX = 190: 0x8032 + 5 x 190 ends at 0x83E4, below 0x8400
+  (image region B). It passes 0x8310, the icon VP of base page 14; pages 11-14
+  only link to each other, nothing opens them. Worst case NO GATEWAY + PAIRED
+  + R4.6 = 182 rects; ONLINE + READY + R4.6 = 125.
+- Installed dwin_get_data.py 41,172 B (the board copy was unchanged before).
+  Draw 34 ms, display acks. Preview made on the PC; user to confirm on the
+  display. Old dot code: backup in the session scratchpad only.
+- !! REVERTED the same day: the FILLED RECTANGLE list FREEZES THE DISPLAY. User
+  reported BACK dead on page 56. Tested with simulated taps (VP 0x00D4: 5AA5,
+  0004, x, y): no touch on page 56 works, and page-switch commands are not
+  carried out either (0x0084 keeps 5A01 + page, never cleared), on every
+  page, even after setting the rect count to 0: the display's GUI loop hangs
+  while VP read/write still answers. Only a power cycle clears it. Probably
+  a firmware bug with 1-pixel-wide/high rectangles (x0 == x1 or y0 == y1),
+  untested. dwin_get_data.py restored to the dot version (35,914 B, CRC
+  1432739737) and installed. DO NOT use Basic Graphic command 0x0004 (and be
+  careful with 0x0003) on this display without a power-cycle test plan.
+  make_settings_font.py is kept for reference only.
+DGUS PROJECT (2026-10-30)
+- dwin/make_dgus_project.py (run after make_sd_card.py) writes
+  dwin/DGUS_PROJECT/DWprj.hmi + DWIN_SET (copy of DWIN_SET_sd) to open the
+  pages in DGUS V7.651. DWprj.hmi is an INI file: [INIT] header copied from
+  the one DGUS wrote for this panel (PICFIX=1, VARCount=64, ProVersion=649,
+  SCREENDSIZE=480X320, SPADDRESS=5000) + [IMG] NN=NN.bmp for every page.
+  From DGUS's DwinTerminal.dll (reflection + IL listing, 2026-10-30):
+  pictures are loaded from DWIN_SET\ (Globel.ProjectPathName_Simple);
+  OpenDocument silently gives up when DWprj.tft is missing; ReadConfigtft
+  loads TFT\<picture>.tft (e.g. TFT\00.bmp.tft) per [IMG] entry and stops the
+  list at the first missing one ("open error, please import the config").
+  These are .NET-serialised BizDraw.Core.Document objects: dwin/dgus_tft.ps1
+  writes blank ones with DGUS's own DocumentManager.Save (checked: its Load
+  reads them back, 480x320). Controls: DGUS's Import of the DWIN_SET folder
+  (13/14 .bin), then Save. The script rewrites DWprj.tft / TFT\ each run.
+- Icon libraries kept only in the display (24, 26, 49, animations) are not on
+  the PC: those icons are empty in DGUS. Changes saved in DGUS are NOT read
+  back by make_sd_card.py (its next build replaces them).
+REFERENCE WORKBOOK (2026-10-29)
+- CURIO_DISPLAY_BOARD_REFERENCE.xlsx (project root) = one place for the next
+  developer: hardware/UARTs, jack pins, every display page, control, touch
+  button (with key VP + code + meaning), VP memory map, key codes, sensor card
+  slots, every async_ block with its card key and icon id, all functions of
+  lib.py and the other board files, ESP32 gateway ops, flash IDs, files.
+- Made by dwin/make_reference_xlsx.py: functions are parsed from board_r4/*.py,
+  pages/controls/touches read from DWIN_SET_sd (run make_sd_card.py first),
+  icons from lib._telemetry_icon_for. Hand-written tables (VP map, key codes,
+  hardware, ESP32 ops) are in the script: update them with the code.
+- Found while building it: async_vibration_sensor / vibration_sensor and
+  async_gas_sensor / gas_sensor are defined twice in lib.py (lines ~1562-1597
+  and ~2528-2620); Python uses the later copies. The ESP32 firmware has no
+  "time" or "ts_config" op (the board gets bad-op; the clock falls back to http).
+LLM CHAT (2026-10-29)
+- Display (dwin/make_sd_card.py): home page 2's NEXT now opens HOME3 = 97
+  (home page 3, "PAGE 3 / 3"; page 10 says "1 / 3", page 45 "2 / 3"). Card 1
+  of page 97 = LLM CHAT -> CHAT_PAGE 98: text box CHAT_TEXT_BOX, keys UP 0x0802
+  / DOWN 0x0803 / CLEAR 0x0804 (return keys into CHAT_KEY_VP 0x5F90), ASK =
+  page change to CHAT_KB_PAGE 99 (100 = pressed picture): a-z 0-9 , . ? space,
+  DEL 0x0008, CLEAR 0x0805, SEND 0x000D, CANCEL -> 98. LAST_BUILTIN_PAGE = 100.
+  Page 97 has the clock + profile controls like 45. Page 98 dot list at VP
+  0x1000 (<= 4200 dots, ends 0x413A), page 99 dot list at VP 0x4200 (<= 1500,
+  ends 0x5396): both in page 39's image region A (unused while these pages
+  show; the board empties both lists when the chat pages are left).
+- Board: dwin_llm_chat.py (new) draws the conversation (8 lines x 36 chars,
+  12 x 22 px font, "You:" blue / "AI:" ink / errors red, ^ v when it scrolls)
+  and handles the keys; dwin_wifi_ui.poll calls it on pages 98-100 (busy()
+  is True there) and while an answer is awaited (reply id 75). The text is
+  sent line by line from a 6 KB buffer: one 25 KB buffer raised MemoryError
+  next to lib. NOTE dwin_screen._DW_FONT_HEX is ONE string (adjacent
+  literals), so ''.join() on it needs 16 KB; unhexlify it directly.
+- lib.py "LLM CHAT" section: LLM_URL / LLM_KEY / LLM_MODEL / LLM_SYSTEM /
+  LLM_MAX_TOKENS / LLM_TIMEOUT_MS (empty: the page says "No AI link yet").
+  _llm_request builds: "{q}" in the link -> GET with the question; Gemini
+  generateContent (key added as ?key=); key or model -> OpenAI-style chat
+  completions with "Authorization: Bearer"; else POST {"question": q}. The
+  last 2 question/answer pairs go along. _llm_send uses the gateway's "http"
+  op; _llm_reply/_llm_text/_llm_pick read OpenAI, Gemini, error and plain
+  replies, and cut-off JSON (gateway MAX_BODY 2048) via _llm_json_str;
+  _llm_clean maps smart quotes/dashes to ASCII. async__llm_ask(question) for
+  programs: shows the exchange on page 98, returns the answer ('' on error).
+- ESP32 gateway (ESP32_CURIO_GATEWAY.ino): http op takes optional "headers"
+  {..} and "timeout" (ms, 1-45 s) -> doHttpEx; doHttp() keeps the old calls.
+  Compiled OK (1,247,276 B). Must be flashed for OpenAI-style keys; links
+  with the key in the URL (Gemini) or no key work with the old firmware.
+- Tested: PC tests of request/reply parsing (OpenAI, Gemini, 401 error,
+  cut-off JSON, plain text, offline); on the board the chat draw takes
+  625 ms (full screen) / 177 ms (keyboard line), writes acked. Not tested:
+  a real AI round trip (ESP32 not talking to the board today, LLM_URL empty)
+  and the pages on the display. SD card E: written on the user's request
+  (108 files, verified; --keep-memory, so pictures/video/animations stay).
+- Installed: lib.py 190,060 B, lib.mpy 55,472 B, dwin_wifi_ui.py 16,240 B,
+  dwin_llm_chat.py 9,046 B.
+- Line endings: Python open(p, "w") on Windows writes CRLF; edit scripts must
+  write bytes / newline="" (make_sd_card.py, dwin_wifi_ui.py and the .ino
+  were converted back to LF).
+ESP32-S3 IMAGE CLASSIFICATION ON UART1 (2026-10-29)
+- lib.py: async__s3_get_ai_classify_image(label) / async__s3_result(label),
+  same use as the K230 pair. The user's pasted version used _init_uart7 and
+  async__read_uart_result, which don't exist in lib.py, so these were written
+  new, on UART(1, 115200) (MOD3 JACK1; the same port as the K230, so one
+  camera at a time).
+- _s3 dict: uart, label, conf, gen, alive_t. get_ai_classify_image sends b"1\n"
+  (at most once per 3 s), calls _ai_live_start("image") (page 52) and starts
+  one reader task (_s3_start_reader: a newer gen makes the old reader exit; no
+  restart while alive_t is < 500 ms old). The reader parses each line with
+  _s3_parse into label/conf and passes it to _ai_live_line, so it shows on the
+  IMAGE CLASSIFICATION live panel. async__s3_result is True once when the
+  last label == label.lower(), then clears it.
+- Formats parsed: 'Detected: cat (93%)', 'cat (93%)', 'cat,0.93', 'cat:93',
+  'cat', 'not detected'. _ai_live_parse now also reads 'cat:93' as CAT 93.0%.
+- Tested on the board without a camera (parser + result matching OK). No bytes
+  came in on UART1 or UART7 (nothing connected), so the S3's real output
+  format is still unchecked. Installed lib.py 181,447 B, lib.mpy 51,965 B.
+AI PAGES: NO MORE LEFTOVER RESULTS (2026-10-29)
+- Pages 52-55 all show the same dot list (0x5400), so an image result also
+  appeared on the Voice / Pose / Gesture pages. lib.py _ai_live_line: on an AI
+  page that is not the running mode's, it draws NOT ACTIVE + "<MODE>
+  classification is running" once per visit (_ai_live["blank"]); back on the
+  mode's page the current result is redrawn. lib._ai_live_idle(page) draws
+  NOT RUNNING + "run a program with the AI blocks"; dwin_wifi_ui.poll calls it
+  when page 52-55 is opened while no program runs. Board files only.
+- The board's lib.py / dwin_wifi_ui.py had been updated by the other developer
+  (176,282 / 15,259 B); the local board_r4 copies already held those changes,
+  so the installed files are theirs + this change (lib.py 177,136 B, lib.mpy
+  50,526 B, dwin_wifi_ui.py 15,509 B). Tested on the display: image mode on 52
+  shows CLASS1; opening 53 shows NOT ACTIVE; back on 52 shows CLASS2; idle
+  shows NOT RUNNING.
+SENSOR GRAPH PAGE (2026-10-29)
+- Home page 2 (45), card 3 (244,54)-(353,254) "SENSOR GRAPH" -> new page 95;
+  BACK -> 45, HOME -> 10. LAST_BUILTIN_PAGE = 95 (Studio pages start at 96).
+- Page 95: plot area GRAPH_AREA (24,58)-(466,234) with grid, three legend rows
+  with colour swatches (red 0xE8E4, blue 0x2B7F, green 0x1D67). Controls: three
+  Basic Graphic controls (copies of page 39's, clipped to the plot) reading LINE
+  lists (command 0x0002) at VP 0xFB40 / 0xFBE0 / 0xFC80 (end of image region B:
+  a full picture ends at 0xFB22, save scratch is 0xFFF0) + the 0x5400 dot list
+  for the legend. The built-in DGUS real-time curve control was NOT used: its
+  buffers are 0x1000-0x4FFF = image region A / flash-transfer staging.
+- board_r4/lib.py: _telemetry_record() feeds every numeric (int/float, not bool)
+  sensor result to _graph_feed(); the first 3 numeric sensors get a 64-point
+  history sampled every 0.5 s (~30 s); _graph_draw() writes the lines (each
+  scaled to its own min..max) and the legend "NAME  value" only while page 95
+  is on screen (page read every 500 ms). The graph resets when main.py empties
+  _telemetry_sensors at program start. dwin_wifi_ui.poll redraws it when page
+  95 is opened while no program runs.
+- Tested on the board through _telemetry_record (ultrasonic/LDR/IR + a 4th
+  ignored): line headers [2, 11 segments, colour], legend 491 dots. Installed
+  lib.py 167,686 B, lib.mpy 46,883 B, dwin_wifi_ui.py 13,963 B. SD card written
+  (96 pages, 103 files). User confirmed it works.
+- Sensor choice (2026-10-29): lib.py keeps a history for up to 8 numeric
+  sensors (_GRAPH_MAX); _graph["slots"] picks the 3 shown (default first 3).
+  Legend rows on page 95 are return keys (18,y)-(330,y+21), codes 0x0601-0x0603
+  to GRAPH_KEY_VP 0x5F70; _graph_keys_poll() moves that row to the next sensor
+  not on another row. Polled in _graph_draw (every 0.5 s while a program runs)
+  and in dwin_wifi_ui.poll on page 95 when idle. Legend rows end in " >" when
+  more than 3 sensors exist; legend kept under 900 dots (key VPs 0x5F00+).
+  SD card written (103 files). Installed lib.py 168,903 B, lib.mpy 47,292 B,
+  dwin_wifi_ui.py 14,229 B. Tested with 5 sensors: start ULTRASONIC/LDR/SOIL;
+  row 3 taps -> GAS -> TEMP; row 1 tap -> SOIL (skips rows already shown); key
+  VP cleared after each tap; legend 'SOIL 655 >' etc.
+AI PROJECTS LIVE RESULT FOR IMAGE / VOICE / POSE / GESTURE (2026-10-28)
+- User moved the K230 to UART1 (the lib.py K230 functions use UART1).
+- board_r4/lib.py: _ai_live_start(mode) is called by
+  async__k230_get_ai_classify_image / async_voice_classify / async_pose_classify
+  / async__k230_gesture_classify (opens page 52/53/54/55); each K230 reader task
+  calls _ai_live_line(text) per line. The page's LIVE RESULT panel is drawn with
+  dwin_screen._dw_gesture_show (dot list VP 0x5400): label, confidence, raw line
+  (<= 1/s). It draws only while that page is on screen (page read every 500 ms;
+  full redraw on return) because 0x5400 is shared with keyboards / sensor cards.
+  Behaviour fix: async__k230_result now clears its label on "not detected"
+  (before, True stayed after the object left).
+- The board runs lib.py (MicroPython prefers .py over .mpy). lib.mpy on the
+  board was stale (older source); it is now recompiled from the same lib.py.
+  Installed: lib.py 162,926 bytes CRC 841209096, lib.mpy 45,093 bytes.
+  Backups: backups/ai_live_before_2026-10-28.
+- Tested with the user's program (classify "Class1", result Class1/Class2):
+  ran 15 s, camera saw Class2 -> 14 x 'o', STOP clean; display on page 52,
+  panel 620 dots. Link already at 460800: 32 KB in 767 ms (was 2933 ms at
+  115200), 6/6 read-back spots correct.
+- make_sd_card.py: AI_LIVE_INDEXES = (0,1,2,3): pages 52-55 get the LIVE RESULT
+  panel + dot control 0x5400. Built locally (95 pages); copying to the SD card
+  was blocked by the safety check because a full rebuild replaces the other
+  developer's card build (removes their 26_Profile.icl placeholder - fine now
+  that the display has been flashed with it once). User then approved: card
+  written with --keep-memory (102 files verified; 26_Profile.icl removed from
+  the card so the display keeps its profile photo). Old page files in
+  backups/ai_live_before_2026-10-28/sd. Display flash + test PENDING.
+- Aliases added (user's program used the other naming):
+  async__k230_voice_classify = async_voice_classify,
+  async__k230_voice_heard = async_voice_heard. Installed lib.py 163,098 bytes
+  and matching lib.mpy. User's voice program now runs (no NameError). Note:
+  voice classify sends "15" then "word1" (it only strips the word "class").
+  Still missing in lib.py: async_voice/pose/gesture_confidence (Blockly has
+  those blocks).
+DISPLAY LINK 460800 BAUD (2026-10-28; DISPLAY FLASH + SPEED RETEST PENDING)
+- Video / animation / picture transfers are limited by the board -> display
+  UART (USART3). Measured at 115200: 32 KB into display VP memory in 2.93 s
+  (11.2 KB/s = the link maximum). 460800 is the display's fastest exact rate
+  (T5LCFG.CFG 0x0A-0x0B = 3225600 / baud = 0x0007); 921600 is not possible.
+- SD card: only byte 0x0B of E:\DWIN_SET\T5LCFG.CFG was changed (0x1C -> 0x07);
+  the other 102 files are the other developer's 14:34 build, untouched
+  (including their 26_Profile.icl placeholder). Old CFG in
+  backups/baud_before_2026-10-28/sd. make_sd_card.py now writes the same
+  setting (DISPLAY_BAUD = 460800) in every build.
+- Board dwin_screen.py (edited directly - make_dwin_screen.py now warns that
+  regenerating would undo these and the 2026-10-26 no-reply edits):
+  _DW_BAUDS = (460800, 115200); the first frame without an OK makes it try the
+  next speed (_dw_open / _dw_try), so a display with an older card keeps
+  working. Tested before the flash: board fell back to 115200 by itself and
+  the display answered. Board copy before the change:
+  backups/baud_before_2026-10-28/dwin_screen_board.py.
+- NEXT: flash the card, then rerun the 32 KB timing at 460800 (expect ~4x).
+PROJECTS LIST (PAGES 40, 41, 71, 72, 73) PLAY & STOP TOUCH CONTROLS (2026-10-28)
+- Added interactive [▶ PLAY] (green) and [⏹ STOP] (red) touch buttons in the header
+  of all five PROJECTS LIST pages (Pages 40, 41, 71, 72, 73) next to [● LIVE].
+- Header layout:
+  * Title: "PROJECTS LIST" (font 17, x=18..195, y=14)
+  * PLAY button: (210, 10, 275, 38), green (#16a34a), white play triangle + "PLAY"
+  * STOP button: (285, 10, 350, 38), red (#dc2626), white stop square + "STOP"
+  * LIVE badge: (360, 11, 420, 37), green (#00a76a), white dot + "LIVE"
+- Touch controls in 13TouchFile.bin:
+  * Return Key code (TP_Code 0xFE05) writing to PROJECTS_KEY_VP = 0x5F60:
+    - PLAY_BOX = (205, 4, 278, 44) -> key code 0x0501
+    - STOP_BOX = (282, 4, 355, 44) -> key code 0x0502
+- Board software integration (board_r4/main.py & board_r4/lib.py):
+  * main.py idle loop polls VP 0x5F60:
+    - On 0x0501: clears VP, logs "[DWIN] PLAY button pressed.", sets cmd = "START_EXECUTION"
+      and executes user.py via run_engine().
+  * main.py execution watcher task polls VP 0x5F60 every 20ms during user script run:
+    - On 0x0502: clears VP, logs "[DWIN] STOP button pressed.", raises KeyboardInterrupt
+      to gracefully stop user.py execution.
+  * lib.py _telemetry_draw() checks VP 0x5F60:
+    - On 0x0502: clears VP, logs "[DWIN] STOP button pressed during telemetry.", raises
+      KeyboardInterrupt to immediately abort synchronous user script loops.
+- Synced to board_main/ (main_r4_fixed.py, lib.py, lib_with_dwin.py).
+- Installed on Curio STM32 (COM88): main.py (29,317 bytes) and lib.py (159,877 bytes).
+- Built SD package with make_sd_card.py --keep-memory --init-profile --sd E: (103 files, verified OK).
+
+HOME PROFILE IMAGE: WIDER 48x36 AVATAR & HOME PAGE 10 DYNAMIC DISPLAY (2026-10-28)
+- User requested wider avatar and verified profile photo on HOME page 10.
+- Implemented Option A: 48x36 px (+50% wider, natural 4:3 photo ratio):
+  * Shifted decorative battery icon left to (388, 15).
+  * Placed profile avatar at (426, 6) with size 48x36 px.
+  * Touch box PROFILE_TAP_BOX expanded to (418, 0, 479, 47) on Page 10 and Page 45.
+  * Attached dynamic icon_control(426, 6, 0, PROFILE_LIB) to BOTH Page 10 (HOME) and Page 45 (HOME2).
+  * Updated profile_placeholder() in make_sd_card.py to build 48x36 thumbnail.
+  * Updated dwin_media_uploader.html (and blockly/ + dwin/ copies) to center-crop uploaded photos to 48x36.
+  * Rebuilt full SD card package (103 files verified on E:\DWIN_SET).
+
+HOME PROFILE IMAGE MEMORY (2026-10-28; INITIAL FLASH FAILED, RECOVERY PENDING)
+- IMPORTANT: User flashed the initial profile package and reported the display
+  stuck on boot page 09 instead of opening HOME. Do not reflash the profile
+  package or upload a profile photo until the cause is isolated.
+- Restored the previous 101-file SD package from the backup below. All 101
+  files on E:\DWIN_SET hash-match that backup. The two new files (94.bmp and
+  26_Profile.icl) were moved outside DWIN_SET to E:\profile_recovery.
+  User flashed the recovery card and confirmed HOME opens.
+- Diagnostic package now on E:\DWIN_SET (103 files verified): built with
+  --keep-memory --init-profile --profile-test. It keeps the working two clock
+  controls on HOME and HOME2, adds a static blue avatar to the HOME picture,
+  and puts the font-26 icon control only on page 94. This allows the user to
+  test the profile photo by tapping the static avatar without blocking HOME
+  during boot. User flashed it and confirmed HOME and page 94 both open.
+  User says the page-94 graphic looks small; checking whether this is the
+  intentionally small placeholder drawing or an icon-index/size problem.
+  The HOME avatar in this diagnostic package is static by design; enabling
+  the dynamic icon on HOME remains pending until icon 0 is isolated safely.
+- Root cause of the tiny uploaded photo on page 94: dwin_media_uploader.html
+  passed the video FPS mapping to buildIcl() for the two still profile icons.
+  With selected FPS 5 and display FPS 10, table entries 0 and 1 both pointed
+  to icon 0 (the 32x32 thumbnail). Fixed still libraries to use a 1:1 icon
+  mapping; a Node check verified distinct offsets for icons 0 and 1. The user
+  reopened the HTML, uploaded the photo again, and confirmed page 94 now shows
+  the large photo.
+- Next staged SD package: --keep-memory --profile-test adds the dynamic font-26
+  thumbnail icon only to HOME page 2 (45); boot HOME page 10 remains static.
+  26_Profile.icl is omitted and removed from the SD card, so the uploaded
+  photo in display flash is preserved. E:\DWIN_SET has 102 files, verified.
+  Awaiting test: boot to HOME, tap NEXT, inspect avatar on HOME2.
+- Added a dedicated profile image library at DWIN font ID 26, flash blocks
+  208-215 (256 KB). It does not touch the three saved pictures at ID 24-25,
+  animations at ID 28-31, page pictures at ID 32+, or video at ID 49+.
+- Home pages 10 and 45 show icon 0: a 32x32 avatar at (446,8), immediately
+  right of the battery indicator. Tapping (444,4)-(479,44) opens new page 94.
+  Page 94 shows icon 1 at (36,48), 408x272, with BACK/HOME to page 10.
+  DWIN Page Studio's next custom page is now 95.
+- dwin_media_uploader.html has a Profile Image target. It center-crops the
+  uploaded PNG/JPG to a 32x32 avatar and fits the full image inside 408x272,
+  packages both as a two-icon ICL, and sends it through the existing DWV
+  direct-flash protocol starting at block 208, capped at eight blocks.
+- Initial placeholder 26_Profile.icl is built only with --init-profile.
+  Normal later --keep-memory builds omit it and remove old copies from the
+  SD card, preserving an uploaded profile in display flash. Do not use
+  --init-profile after a real user image has been uploaded; it replaces it.
+- Built 95 pages / 646 touch controls. Placeholder ICL verified as two images
+  (32x32 and 408x272), 9,592 bytes. HTML JavaScript passed node --check.
+  Backed up the previous 101-file SD set at
+  backups/profile_before_2026-10-28/DWIN_SET. Rebuilt with
+  --keep-memory --init-profile and copied/verified 103 files on E:\DWIN_SET.
+  The initial physical flash did not boot to HOME; investigate before use.
+
+BLUETOOTH PAGE: VISIBLE / DISCONNECT / RENAME (2026-10-28)
+- ESP32 firmware (D:\Arun\blockly_img_voice-model_new\esp32-s3_firmware\
+  ESP32_CURIO_GATEWAY\ESP32_CURIO_GATEWAY.ino; original in
+  backups/bluetooth_before_2026-10-28): new local ops ble_adv {"on"}
+  (visible/hidden, saved as pref ble_vis), ble_disconnect (getConnId()),
+  ble_name {"label"} (A-Z 0-9 -, max 8, pref ble_label; name becomes
+  ESP32-BLE-CURIO_V2-<label>; ESP.restart() 1.5 s later). STAT/ble_status
+  report ble_visible and the real name. Compiled OK with arduino-cli
+  (esp32 core 3.3.11, NimBLE on S3): 1,251,366 bytes vs 1,248,746 before.
+  MUST BE FLASHED BY THE USER (Arduino IDE). The prefix is kept so apps that
+  look for "ESP32-BLE-CURIO..." still find the board; the web page connects by
+  service UUID anyway.
+- Page 58 (make_sd_card.py settings_detail_page index 1): status box (board
+  draws CONNECTED / VISIBLE / HIDDEN / RESTARTING at BT_STATE_POS), name box
+  (printed prefix, board draws the label at BT_LABEL_POS, dot VP 0x8030, max
+  244 dots), buttons VISIBLE ON/OFF 0x0120, DISCONNECT 0x0121, RENAME 0x0122
+  (return keys to VP 0x5F00). Pages 92/93: name keyboard (A-Z 0-9 -, DEL,
+  CLEAR 0x0130, SAVE 0x0D, CANCEL -> 58), text dots at 0x5400.
+  LAST_BUILTIN_PAGE = 93; dwin_studio.py now uses it (it used 73 and would have
+  numbered a new list page 74 = the port tester).
+- Board: dwin_wifi_ui.py (_bt_key/_bt_poll, ids 72-74), dwin_get_data.py
+  (BT_* constants, ble_label(), page 58 drawing, bt_override), iot_bus.py
+  (keeps ble_visible). Fixed: keyboard dots are now capped at 900 when sent, so
+  they end before KEY_VP 0x5F00 (1100 could overwrite it); buffer stays 1100
+  because dwin_screen._dw_text_dots fills up to 1100. Tested on the board:
+  page 58 dots 210, rename typing/DEL/CLEAR/8-char limit, long Wi-Fi password.
+  SD card written (94 pages, 642 touch records, 101 files verified).
+PROJECTS LIST DYNAMIC SENSOR/ACTUATOR ICONS VIA DGUS VARIABLE ICONS (2026-10-27)
+- Feature Implemented:
+  * When any sensor or actuator block is used in Blockly / MicroPython (e.g., IR, Button, Buzzer,
+    Ultrasonic, Servo, DHT22, etc.), its matching icon now appears dynamically in the white 40x40 box
+    of its card on the PROJECTS LIST pages (Pages 40, 41, 71, 72, 73).
+- Display Firmware & Resource Updates:
+  1. Built `48_SensorIcons.icl` (120,312 bytes, CRC 0x9e71) via `dwin/build_sensor_icons.py`:
+     - Icon 0: Solid white 40x40 square (for empty/cleared card slots).
+     - Icons 1..77: Custom full-color 40x40 vector icons for all 77 devices.
+  2. Updated `dwin/make_sd_card.py` to attach 6 Variable Icon controls (type 0x00, lib 48) to each
+     of the 5 project telemetry pages (40, 41, 71, 72, 73) at:
+     - Card 1: VP 0x6110, position (24, 93)
+     - Card 2: VP 0x6210, position (178, 93)
+     - Card 3: VP 0x6310, position (332, 93)
+     - Card 4: VP 0x6410, position (24, 196)
+     - Card 5: VP 0x6510, position (178, 196)
+     - Card 6: VP 0x6610, position (332, 196)
+  3. Recompiled SD package and verified 99 files copied to `E:\DWIN_SET`.
+- Curio Board Firmware Updates:
+  1. Updated `board_r4/lib.py` (and `board_main/lib.py`):
+     - Added `_telemetry_icon_for()` to map sensor/actuator names and keys to icon IDs (1..77).
+     - Updated `_telemetry_record()` to register the `icon_id` with each sensor entry.
+     - Updated `_telemetry_draw()` to write the icon ID directly to the display VP (0x6110..0x6610)
+       over UART3 whenever telemetry updates or pages flip.
+  2. Installed `lib.py` (157,507 bytes, CRC 102454618) to Curio STM32 board over COM88. Board restarted.
+
+77 SENSORS & ACTUATORS COMPLETE INTERACTIVE CATALOG (PAGES 79-91) (2026-10-27)
+- 13-Page Comprehensive Catalog Added to DWIN Display:
+  * Implemented `dwin/generate_sensors_catalog.py` with all 77 requested sensors and actuators:
+    - 6 cards per page matching the uploaded template (`media_1793088255404_716b7f46.png`).
+    - Color-coded top banners: Red, Blue, Orange, Teal, Purple, Green.
+    - Each card features:
+      1. Top banner: Device name in bright white bold text (e.g., BUTTON, BUZZER, DHT22, etc.).
+      2. Icon box: Full-color 36x36 custom vector icons/logos for every single device.
+         (Replaced all blank/black placeholder icons with distinct vector drawings: tactile button switch,
+         buzzer acoustic horn with sound waves, DHT22 slotted housing with thermometer and droplet,
+         PIR dome, mechanical cube relay, LED dome & cathode/anode pins, etc.)
+      3. Card body: Signal type (DIGITAL IN, PWM OUT, ANALOG ADC, I2C, SPI, UART) and Curio port pinouts.
+    - Navigation: PREV and NEXT buttons with dynamic "PAGE X / 13" indicator and 77 DEVICES count.
+  * Pages mapped contiguously from Page 79 to Page 91 (92 total display pages, 2665 KB).
+  * Home Page 10 Card 2 ("SENSORS & ACTUATOR LIST") touch target updated directly to Page 79.
+  * BACK and HOME touch buttons on all 13 catalog pages return safely to Home Page 10.
+  * 596 touch buttons generated and 99 verified files copied directly to SD card `E:\DWIN_SET`.
+
+HOME PAGE CARD 2 "SENSORS & ACTUATOR LIST" UPDATE (2026-10-27)
+- Changed Home Page (Page 10) Card 2 Title:
+  * Previously, Card 2 (x=128..236, y=54..254) on Home Page 10 displayed "SENSORS LIST".
+  * Updated `home_page()` in `dwin/make_sd_card.py` to overwrite the label area with matching
+    emerald green background (#00a24a) and white text:
+    "SENSORS &" / "ACTUATOR" / "LIST"
+  * Rebuilt `32.icl` (79 pages, 1917 KB) and refreshed all 86 verified files on SD card `E:\DWIN_SET`.
+
+PROJECTS LIST HEADER ARTWORK UPDATE (2026-10-27)
+- Changed Top Header Title on 5-Page Card List (Pages 40, 41, 71, 72, 73):
+  * Previously, `list_page()` in `dwin/make_sd_card.py` opened `11.bmp` without covering the old
+    baked-in text, displaying "SENSORS LIST" in the top bar.
+  * Added clean black header background and bright white title text "PROJECTS LIST" at (62, 25)
+    with font size 21 bold.
+  * Kept the green "LIVE" badge at (355..418) and back button intact.
+  * Rebuilt `32.icl` (79 pages, 1915 KB) and copied all 86 verified files to SD card `E:\DWIN_SET`.
+
+DWIN NO-REPLY / BLIND MODE & DISPLAY WIRING DIAGNOSIS (2026-10-26)
+- Root Cause Identified:
+  1. The board diagnostics showed:
+     `dwin: no reply from the display (its TX does not reach PD8) - sending without checks`
+  2. In `dwin_screen.py` and `dwin_wifi_ui.py`:
+     When `_dw_send()` received no ACK at boot, it permanently set `_dw_blind = True`.
+     When `_dw_blind` was True, `_dw_read()` returned None immediately and `dwin_wifi_ui.poll()`
+     returned at line 228 without doing anything.
+  3. Consequently:
+     - Tapping "PORT & PIN MANAGER" on the display changes the page internally on the DWIN screen to Page 74.
+     - But because the DWIN TX wire did not reach STM32 RX (`PD8`/`PD9`), the STM32 could not read
+       current page (`_dw_read(0x0014, 1)` returned None), so `dwin_port_test.poll()` was never invoked!
+     - In `lib._telemetry_draw()`: when `page is None`, it called `dw._dw_read(0x0014, 1)`, got None,
+       and returned False without drawing any sensor cards!
+- Solutions Implemented:
+  1. Updated `lib._telemetry_draw()` in `lib.py` (and `lib.mpy`): if `dw._dw_read()` returns None,
+     it defaults `page = 40` and proceeds to draw the sensor telemetry cards to VP 0x5500 anyway!
+  2. Updated `dwin_screen.py`: removed the `if _dw_blind: return None` lockout in `_dw_read()`. It now
+     attempts to read over UART3 and dynamically clears `_dw_blind = False` as soon as replies arrive.
+  3. Updated `dwin_wifi_ui.py`: removed `if dw._dw_blind: return`, allowing continuous page polling.
+  4. Updated `main.py`: fixed `RX error:` logging.
+- DWIN Display Cable Wiring (Motherboard R4 Connector J5):
+  * DWIN Pin 1 (5V)  -> Board +5V rail (MOD1 pin 5 or MOD4 pin 5; J5 pin 6 is only 3.3V)
+  * DWIN Pin 5 (GND) -> J5 Pin 1 (GND)
+  * DWIN Pin 4 (RX)  -> J5 Pin 2 (TXD_DISP - PD8 through R42)
+  * DWIN Pin 3 (TX)  -> J5 Pin 5 (RXD_DISP - PD9 through R41)
+  Note: If TX/RX are crossed, swap J5 Pin 2 and Pin 5.
+
+BLOCKLY SENSOR LIST TELEMETRY & HEAP MEMORYERROR RESOLUTION (2026-10-26)
+- Root Cause Identified:
+  1. User reported that when connecting with Blockly, the sensor list was not updating or appearing on the display.
+  2. Investigation via board diagnostics revealed that the board had raw uncompiled `lib.py` (153,165 bytes).
+  3. When background tasks (Wi-Fi status, clock polling, port manager) ran, the 512 KB MicroPython heap experienced normal fragmentation.
+  4. When Blockly sent PLAY, `run_engine()` in `main.py` tried to compile `lib.py` from source. The compiler attempted to allocate a contiguous block of 7,352 bytes, which failed with:
+     `MemoryError: memory allocation failed, allocating 7352 bytes`
+  5. As a result, `user.py` crashed before starting, no sensor calls (`async_IR`, etc.) ever ran, and `_telemetry_sensors` remained empty.
+- Solution Implemented:
+  1. Precompiled `lib.py` with `mpy-cross` (emitting mpy v6.3 bytecode) into `lib.mpy` (42,127 bytes, <28% original size).
+  2. Removed `lib.py` from the board so MicroPython never invokes the source compiler at runtime.
+  3. Updated `board_r4/main.py` to preload `lib` at board boot right after `iot_bus.set_uart()`, ensuring `sys.modules['lib']` is always active and available to `dwin_wifi_ui.py`.
+  4. Installed `lib.mpy` (CRC 4135486114) and `main.py` (CRC 334137718) to Curio board COM88.
+  5. Verified live on board:
+     - Free RAM after boot: 276,208 bytes.
+     - Live execution test of `user.py`: executed cleanly without MemoryError.
+     - Live sensor recording: `['IR:D3', 'IR (D3)', '0 [DETECT]', 5417]` successfully registered and drawn to Page 40 (`_telemetry_draw(page=40)` returned True).
+
+CURIO MOTHER BOARD V4.0 (CM_MOTHERBOARD_R4) PIN & PORT MAPPING (2026-10-26)
+- Schematic Analyzed: "D:\Download\CM_MOTHERBOARD_R4 CIRCUIT (1).pdf" (STM32H743ZGT6)
+  1. Complete Hardware Connector Pinout:
+     * MOD 1 (ANALOG / DIGITAL - I2C1):
+       - Pinout (6-pin Jack): 1:SDA1(PB7), 2:SCL1(PB6), 3:DIG, 4:ANA, 5:+5V, 6:GND
+       - JACK 1: DIG = PD3 (D3), ANA = PC0 (C0)
+       - JACK 2: DIG = PD4 (D4), ANA = PC1 (C1)
+       - JACK 3: DIG = PD5 (D5), ANA = PC2 (C2)
+       - JACK 4: DIG = PD6 (D6), ANA = PF9 (F9)
+     * MOD 2 (ANALOG / DIGITAL - I2C4):
+       - Pinout (6-pin Jack): 1:SDA4(PD13), 2:SCL4(PD12), 3:DIG, 4:ANA, 5:+5V, 6:GND
+       - JACK 1: DIG = PD7 (D7), ANA = PC4 (C4)
+       - JACK 2: DIG = PE0 (E0), ANA = PC5 (C5)
+       - JACK 3: DIG = PE1 (E1), ANA = PA1 (A1)
+       - JACK 4: DIG = PG3 (G3), ANA = PA2 (A2)
+     * MOD 3 (SERIAL / SPI):
+       - JACK 1: UART1 (PA9/PA10), DIG = PG0 (G0), ANA = PA4 (A4)
+       - JACK 2: UART2 (PD5/PD6), DIG = PG1 (G1), ANA = PF8 (F8)
+       - JACK 3: UART3 (PD8/PD9), DIG = PG2 (G2), ANA = PA6 (A6)
+       - JACK 4: SPI2 (PB12/13/14/15), DIG = PB12 (B12), ANA = PA7 (A7)
+     * MOD 4 (PWM & MOTORS):
+       - Pinout: 1:PWM1, 2:PWM2, 3:DIG, 4:ANA, 5:+5V, 6:GND
+       - JACK 1: PWM1 = PE11 (PWM_MOD4_J1_1 / TIM1_CH2), PWM2 = PE12 (PWM_MOD4_J1_2), DIG = PE3 (E3), ANA = PA3 (A3)
+       - JACK 2: PWM1 = PB9 (PWM_MOD4_J2_1 / TIM4_CH4), PWM2 = PB8 (PWM_MOD4_J2_2), DIG = PG4 (G4), ANA = PF3 (F3)
+       - JACK 3: PWM1 = PE13 (PWM_MOD4_J3_1 / TIM1_CH3), PWM2 = PB15 (PWM_MOD4_J3_2), DIG = PG5 (G5), ANA = PF4 (F4)
+       - JACK 4: PWM1 = PD15 (PWM_MOD4_J4_1 / TIM4_CH4), PWM2 = PE14 (PWM_MOD4_J4_2), DIG = PG6 (G6), ANA = PF5 (F5)
+     * ONBOARD PERIPHERALS:
+       - BUZZER: PF6 ('F6' / 'BUZZ') driven via Q1 BC847 NPN transistor
+       - BOARD LED: PF7 ('F7') green LD2 on board
+       - BUTTON 1: PE10 ('E10' / 'USRSW') with internal pull-up / active low S1
+       - BUTTON 2: PE9 ('E9' / 'SW2') with internal pull-up / active low S2
+
+  2. MicroPython Pin Naming Rules on Curio Board:
+     - Always use port letter + number strings, e.g.: Pin('D3'), Pin('C0'), Pin('F7'), Pin('E11').
+     - Aliases defined in board firmware: 'BUZZ' (F6), 'USRSW' (E10), 'SW2' (E9), 'PWM_MOD4_J1_1' (E11), etc.
+     - Note: Passing 'PD3' directly throws a ValueError ("Pin(PD3) doesn't exist").
+
+  3. Display Port & Pin Manager Update:
+     - Updated dwin_port_test.py with 18 physical board jacks & peripherals.
+     - Scrollable list displays exact silkscreen connectors:
+       * M1-J1 (PD3 / PC0)
+       * M1-J2 (PD4 / PC1)
+       * M1-J3 (PD5 / PC2)
+       * M1-J4 (PD6 / PF9)
+       * M4-J1 (PE11 PWM / PA3)
+       * M4-J2 (PB9 PWM / PF3)
+       * M4-J3 (PE13 PWM / PF4)
+       * M4-J4 (PD15 PWM / PF5)
+       * M2-J1 (PD7 / PC4)
+       * M2-J2 (PE0 / PC5)
+       * M2-J3 (PE1 / PA1)
+       * M2-J4 (PG3 / PA2)
+       * M3-J1 (PG0 / PA4)
+       * M3-J2 (PG1 / PF8)
+       * M3-J3 (PG2 / PA6)
+       * BUZZER (PF6)
+       * LED (PF7)
+       * BUTTONS (PE10/PE9)
+     - Shows exact Pin 1..6 connector pinout wiring diagram on the screen for the selected jack so users know where to plug signals, 5V, and GND without checking external docs.
+     - Automatically routes DIG IN / DIG OUT to the Jack's digital pin, ANA IN to analog pin, and PWM / SERVO to the Jack's PWM pin.
+     - Verified live on COM88:
+       * ADC(Pin('C0')) read 15571, ADC(Pin('C1')) read 13683, ADC(Pin('A3')) read 14259.
+       * Pin('F7', Pin.OUT).value(1) successfully lit LD2 Green LED.
+     - Installed to Curio board over USB serial (COM88).
+     - SD card E:\DWIN_SET refreshed and verified.
+
+PORT & PIN MANAGER: INTERACTIVE HARDWARE & ACTUATOR TESTER (2026-10-26)
+- Features Added:
+  1. Home Page 2 (Page 45) Entry:
+     - Added Card 2: "PORT & PIN MANAGER (GPIO / PWM / ADC)" at (128, 54, 236, 254).
+     - Tapping this card jumps directly to the Hardware Port & Pin Tester on Page 74.
+  2. 5 Dedicated Interactive Modes Across Pages 74-78:
+     - Page 74: DIGITAL INPUT (auto-reads logic 0/1, live state badge DETECT/CLEAR).
+     - Page 75: ANALOG INPUT (auto-reads 16-bit ADC, calculates voltage 0.0V-3.3V, live bar).
+     - Page 76: DIGITAL OUTPUT (touch ON [3.3V] / OFF [0V] for LEDs, relays, buzzers).
+     - Page 77: PWM OUTPUT (touch 0%, 25%, 50%, 75%, 100% and -10%/+10% at 1kHz for motor speed/dimming).
+     - Page 78: SERVO CONTROL (touch 0°, 45°, 90°, 135°, 180° and -15°/+15° 50Hz pulses).
+  3. Universal Left Port Selector (Shared across all 5 pages):
+     - Scrollable port list: D2-D13, A0-A7, JACK1-JACK4, MOD1-MOD4.
+     - Up/Down scroll buttons and active port selection indicator.
+  4. Display & Memory Isolation:
+     - Basic Graphic 0x21 dot text control at dedicated VP 0x6600 (PORT_TEST_DOTS_VP).
+     - Return key touch controls at dedicated VP 0x5F50 (PORT_TEST_KEY_VP).
+     - All 79 pages and 546 touch buttons compiled, verified, and copied to SD card E:\DWIN_SET.
+  5. Board Driver: board_r4/dwin_port_test.py (and board_main/dwin_port_test.py)
+     - Hooked into dwin_wifi_ui.poll().
+     - Manages GPIO, ADC, PWM, and Servo pulse generation with clean deinit on page exit.
+     - 100% Standalone: runs autonomously on STM32 boot via main.py; zero PC or Blockly required.
+
+- Status Badge & Port Header Overwrite Resolution (2026-10-26):
+  1. Root Cause Identified from User Photo (media_1793011447538_380a1294.jpg):
+     - The background image on Page 74 had a static label "[ DIGITAL INPUT MONITOR ]"
+       baked into the green status badge, while dwin_port_test.py was writing dynamic
+       dot text "STATE: LOW (0) - CLEAR" into the exact same coordinates, resulting
+       in overlapping, garbled text.
+     - The active port header formatted `active_port + " (" + phys + ")"`, which
+       evaluated to "D3 (D3)" and rendered as "D3 D3" next to "PORT:".
+  2. Solution Implemented:
+     - In dwin/make_sd_card.py: removed static placeholder text from Page 74 (DIG IN)
+       and Page 75 (ANA IN) backgrounds. The status box is now completely clean and
+       dedicated to live dynamic readings.
+     - In board_r4/dwin_port_test.py: simplified header to print just "D3" when
+       phys == active_port (or "JACK1 - D2" when mapped).
+     - Realigned vertical layouts across all 5 pages:
+       * Page 74 (DIG IN): Badge at y=142..186 with live status, voltage at y=204, logic at y=232.
+       * Page 75 (ANA IN): Clean ADC box at y=142..186, voltage, and dynamic meter bar at y=210..230.
+       * Page 76 (DIG OUT): Live state line at y=138, ON/OFF buttons at y=165..225.
+       * Page 77 (PWM OUT): Live duty line at y=138, presets at y=158..198, steppers at y=212..252.
+       * Page 78 (SERVO): Live angle line at y=138, presets at y=158..198, steppers at y=212..252.
+     - Rebuilt 32.icl (79 pages, 1915 KB), 14ShowFile.bin, and 13TouchFile.bin (546 touch buttons).
+       Copied all 86 verified files to SD card E:\DWIN_SET.
+     - Installed updated dwin_port_test.py (10,429 bytes, CRC 1286649294) to Curio board (COM88).
+
+SENSOR CARD TEXT RENDERING RESOLUTION: BASIC GRAPHIC 0x21 AT VP 0x5500 (2026-10-26)
+- Root Cause Identified:
+  1. The DWIN display model DMG48320C035_03W has hardware/firmware font rendering
+     instabilities with native 0x11 text controls when font configurations don't match,
+     wrapping characters vertically and producing broken glyph fragments.
+  2. Memory VP collision: PROJECTS_TEXT_VP at 0x8030 collided with SETTINGS_GRAPHICS_VP
+     (0x8030), causing dwin_get_data.py's background refresh to overwrite sensor Card 0.
+- Solution Implemented:
+  1. Converted all five sensor card pages (40, 41, 71, 72, 73) to proven Basic Graphic
+     0x21 dot text control at dedicated VP 0x5500 (PROJECTS_DOTS_VP).
+  2. Isolated 0x5500 completely from Settings memory (0x8030).
+  3. lib.py renders the 6 visible cards per page using 5x7 dot text:
+     - Header: white sensor/actuator label (e.g. "IR D3") inside the colored top strip.
+     - Body: live status/value (e.g. "DETECT" in green / "CLEAR" in grey) right of icon.
+  4. Built and hash-verified all 81 files on SD card E:\DWIN_SET with --keep-memory.
+  5. Installed lib.py (153165 bytes) and dwin_wifi_ui.py (9081 bytes) to Curio STM32 (COM88).
+
+FIVE-PAGE SENSOR CARDS (2026-10-26; ARTWORK FLASHED, TEXT RETEST PENDING)
+- User requested the supplied SENSORS LIST reference style for PROJECTS LIST:
+  six coloured cards in a 3x2 grid, LIVE badge, PREVIOUS/NEXT buttons, and
+  five page dots. Project capacity is now 30 entries (six on each page).
+- Page IDs: 40, 41, 71, 72, 73. Pages 42-70 retain their picture, video,
+  Settings, keyboard and animation roles. DWIN Page Studio's first new page
+  is now 74. PREVIOUS is disabled on page 1 and NEXT on page 5; BACK on
+  later pages goes to the previous page, and HOME always goes to page 10.
+- Page artwork is built by dwin/make_sd_card.py from base 11.bmp, matching
+  the reference's header, card colours, icon boxes and bottom pagination.
+  Each card has two native 0x11 text controls: white sensor/actuator name in
+  its coloured header and live value in the pale body. All five pages share
+  twelve 16-byte fields at VP 0x8030-0x808F. The board writes only the
+  visible page; that area is shared with the Settings graphic at VP 0x8030,
+  so dwin_wifi_ui.poll() restores the visible page on navigation.
+- board_r4/lib.py now registers up to 30 sensors/actuators and updates only
+  changed text fields. The prior page-40/41 dot buffers at 0x5500/0x5600
+  overlapped one another and other controls; they are no longer used.
+- Verified locally: 74 display pages, 12 text controls on each of the five
+  pages, all touch routes, 30-slot page slicing, no off-page telemetry writes.
+  Visually inspected page 1 and page 5 PNG previews. `--keep-memory` copied
+  and hash-verified all 81 files on E:\DWIN_SET; the prior 78-file card is
+  backed up at backups/projects_cards_before_2026-10-26/DWIN_SET.
+- Installed on R4 COM88: lib.py 152001 bytes/CRC 1379480423 and
+  dwin_wifi_ui.py 9297 bytes/CRC 3723124176, both checked and restarted.
+  Live REPL import succeeded with ~250 KB free and display page read [40].
+  The user flashed this layout and photographed page 1: artwork and
+  pagination appeared correctly, but the first sensor text was broken.
+  The 12x24 text correction above is now on the card awaiting reflash.
+
+PROJECTS LIST (PAGES 40 & 41) MULTI-PAGE TELEMETRY & ACTUATOR INTEGRATION (2026-10-24)
+- Multi-Page Pagination with Touch Buttons (< PREV and NEXT >):
+  1. Expanded telemetry support from 6 to 12 devices across two pages:
+     - Page 40 (P.1/2): Slots #1 to #6 (VP 0x5500).
+     - Page 41 (P.2/2): Slots #7 to #12 (VP 0x5600).
+  2. Added responsive touch buttons in 13TouchFile.bin:
+     - Touch box (345, 54, 422, 82) on Page 40 flips display to Page 41.
+     - Touch box (345, 54, 422, 82) on Page 41 flips display back to Page 40.
+     - BACK on Page 41 returns to Page 40; HOME returns to Home Page 10.
+  3. 14ShowFile.bin updated with Basic Graphic 0x21 dot controls on both pages:
+     - Page 40: VP 0x5500 (PROJECTS_DOTS_VP).
+     - Page 41: VP 0x5600 (PROJECTS_DOTS_VP_2).
+  4. SD Card build: Generated 71 pages and 452 touch records. All 78 files copied
+     and verified on SD card E:\DWIN_SET with --keep-memory.
+
+- Actuator Telemetry & Non-Blocking Background Buzzer:
+  1. Actuators (buzzer, servo, motor, led, relay, waterpump) registered by name only:
+     - Values set to empty string ("") so no live value dots are transmitted over UART,
+       preventing serial bus congestion.
+     - Rendered in crisp bright white on the display slot.
+  2. Fixed display freeze caused by buzzer:
+     - Problem: `await async_buzzer("D6", 1000, 500, 1000)` was blocking the user's
+       `while True:` loop for 1.5 seconds per iteration with software bit-banging and
+       `await asyncio.sleep_ms(0)` on every single cycle, starving the CPU and freezing
+       sensor reads and display updates.
+     - Solution: Converted `async_buzzer` to non-blocking via `asyncio.create_task()`
+       with background worker `_async_buzzer_worker` and retrigger protection.
+       The buzzer now plays smoothly in the background while the sensor loop continues
+       at full speed (40+ iterations/s), completely eliminating display freezing.
+
+- Buffer Capacity Expansion (Fixed Slot #6 Flame Sensor):
+  - PROJECTS_MAX_DOTS increased from 800 to 1200/1500 dots.
+  - Previous 800-dot limit ran out at sensor 5 (Button at 818 dots), cutting off sensor 6.
+  - Verified live on hardware: all 6 sensors (flex, IR, tilt, ambient, button, flame)
+    render simultaneously and update live on Page 40.
+
+- How to Add a New Sensor to lib.py:
+  1. Define `def <name>(pin)` and `async def async_<name>(pin)`.
+  2. Any function starting with `async_` defined before `_dwin_install_recorders()`
+     is automatically intercepted by `_dwin_make_recorder` without manual wrapping.
+  3. In `_telemetry_record()`:
+     - If digital (0=detect, 1=clear): add name to `("IR", "MOTION", "FLAME", "BUTTON", "TILT")`
+       tuple to get automatic `0 [DETECT]` (green) and `1 [CLEAR]` (grey) formatting.
+     - If analog: add an `elif "<NAME>" in name:` branch to format units (e.g. `PPM`, `LUX`).
+  4. Max devices: 12 (items 1-6 on Page 40, items 7-12 on Page 41).
+
+PROJECTS LIST (PAGE 40) LIVE ACTIVE SENSORS TELEMETRY (2026-10-24)
+- Repurposed Page 40 from saved picture/video view into a live "ACTIVE SENSORS
+  TELEMETRY" dashboard (Method 1: zero extra blocks needed). The saved pictures
+  and video remain fully accessible via STORAGE (Page 46).
+- Fixed I2C sensor bus mapping in board_r4/lib.py:
+  On the CM MOTHERBOARD R4, the APDS-9900 ambient light sensor (and I2C sensor port)
+  is connected to I2C(1) (address 0x39), not I2C(4). Updated ambient() to scan
+  I2C(1) and I2C(4) automatically and catch bus exceptions gracefully, eliminating
+  the `OSError: [Errno 19] ENODEV` error.
+- Verified live on hardware: all 4 sensors (`flex`, `IR`, `tilt`, `ambient`) run
+  concurrently and auto-populate the Page 40 telemetry table.
+- Display changes in dwin/make_sd_card.py:
+  1. Background artwork in list_page(): dark subtitle bar "ACTIVE SENSORS TELEMETRY [LIVE]"
+     and 6 clean sensor slot pills (#1 to #6) on light background.
+  2. 14ShowFile.bin: removed the 3 icon controls, attached Basic Graphic 0x21 dot
+     control at VP 0x5500 (max 800 dots).
+  3. 13TouchFile.bin: removed touch card buttons to FIRST_PIC and VIDEO_PAGE; kept
+     BACK and HOME navigation buttons.
+  4. Built and copied all 78 files to SD card E:\DWIN_SET with --keep-memory.
+- Board changes in board_r4/lib.py and board_r4/main.py:
+  1. _telemetry_record() hooks into _dwin_make_recorder(): every sensor function
+     (async_IR, async_ultrasonic, async_motion, etc.) automatically records its
+     sensor name, port, and live value.
+  2. _telemetry_draw() formats and emits crisp 5x7 dot text to VP 0x5500 over USART3
+     whenever values change (rate-limited to 150 ms).
+  3. main.py clears telemetry at each program start so new projects start clean.
+
+WI-FI INSTANT PAGE ENTRY (2026-10-24; DISPLAY FLASH PENDING)
+- User confirms the Wi-Fi content now appears reliably, but waits about a
+  second when moving SETTINGS -> WI-FI. A forced Wi-Fi dot redraw measured
+  796 ms on the R4, plus page detection. Navigation itself works.
+- Prepared (not yet deployed) separate graphics VPs: page 57 Wi-Fi at
+  0x7340 (1100-dot maximum ending 0x8026); pages 56/58/59 at 0x8030
+  (230-dot maximum ending 0x82E4). Both stay clear of sensor VP 0x8310.
+  The STM32 will keep the Wi-Fi dots preloaded even while Settings is open.
+  Page entry only checks the Wi-Fi buffer header; it redraws if missing.
+  The thinner 5x7 text renders the current six Wi-Fi lines in 1012 dots,
+  including all four network rows (long names are clipped).
+- Changed source files: dwin/make_sd_card.py, board_r4/dwin_get_data.py,
+  board_r4/dwin_wifi_ui.py. All 78 rebuilt SD files were copied and verified
+  on E:\DWIN_SET. The previous card contents are in
+  backups/wifi_page_delay_before_2026-10-24/DWIN_SET.
+- Installed matching R4 files on COM88: dwin_get_data.py 30260 bytes,
+  CRC 1042949525; dwin_wifi_ui.py 8828 bytes, CRC 4218752651.
+  Both checked transfers restarted main.py. Live STM32 test showed
+  Wi-Fi dot header [1,437] at 0x7340 during a scan and Settings header
+  [1,222] at 0x8030, with Curio_Labs connected.
+- Display still runs the previous 14ShowFile layout until the user flashes
+  the card. Its current SETTINGS graphics can look wrong because the STM32
+  already uses the new VPs. NEXT: move SD card to display, run blue download,
+  remove card, restart, and test SETTINGS -> WI-FI entry and all network rows.
+
+WI-FI PAGE REDRAW AFTER SD UPDATE (2026-10-24)
+- User confirmed the rebuilt display fixed the broken text, including the
+  sensor pages. Initially the Wi-Fi page showed blank status/network areas,
+  although the STM32 saw ESP32 connected to Curio_Labs and seven cached
+  scan entries. The display's graphics VP 0x7340 held a valid dot list.
+- A forced STM32 redraw made Wi-Fi status/networks appear. Updated
+  board_r4/dwin_wifi_ui.py so entering any Settings page 56-59 forces a
+  fresh Basic Graphic draw, even if its status values are unchanged.
+  Installed on COM88 (8718 bytes, CRC 603954584); main.py restarted.
+- Live page-switch test: page 56 graphics header [1,222] and page 57
+  header [1,777], both at VP 0x7340. This needs a final user check by
+  leaving and re-entering WI-FI; no SD-card reflash is needed for this
+  board-only fix.
+
+SETTINGS/SENSOR GARBLED TEXT UPDATE (2026-10-24; DISPLAY RETEST PASSED)
+- User photo showed static SETTINGS labels readable but the live Wi-Fi,
+  Bluetooth and Firmware text broken into blocks. User reports sensor pages
+  have the same symptom; HOME RTC clock is readable. A live DWIN read of
+  VP 0x5300 returned correct ASCII, so the Settings fault is in rendering,
+  not the STM32 text value.
+- Replaced the three SETTINGS 0x11 dynamic text controls and the Bluetooth
+  and Firmware detail 0x11 controls with Basic Graphic 0x21 dot text. The
+  Wi-Fi detail page already used dot text. Pages 56-59 now share VP 0x7340;
+  board_r4/dwin_get_data.py reads current page VP 0x0014 and draws only the
+  visible page. The maximum Wi-Fi list (1300 dots) ends at VP 0x8282.
+- This also removes the old Wi-Fi dot region at 0x6800, which overlapped
+  sensor-page 13/14 text VPs. The former Firmware dot region overlapped
+  sensor-page icon VP 0x8310. Verified 14ShowFile.bin has only the four
+  intended controls in 0x7340-0x830F. HOME uses its readable 0x12 RTC
+  controls; no dot-clock control is installed in the new page file.
+- Replaced the locally generated 0_DWIN_ASC.HZK with a standard 3,082,752-
+  byte DWIN training-demo copy (dwinhmi/DWIN_Training_Demos, Demo_3).
+  The former font and all 78 SD files are saved in
+  backups/settings_text_before_2026-10-24. The user confirmed the
+  physical display now renders the sensor text correctly.
+- Rebuilt and hash-verified all 78 files on E:\DWIN_SET. Installed the
+  matching dwin_get_data.py on STM32 COM88 (29777 bytes, CRC 146046182),
+  restarted main.py, and verified live display page read and refresh.
+  The card was flashed to the display. The user confirmed readable text;
+  see the Wi-Fi redraw note above for the later board-only update.
+
+PROPER FONT + DISPLAY-DRAWN CLOCK (2026-10-24)
+- dwin/0_DWIN_ASC.HZK: DWIN's standard 0# ASCII font (all sizes), made by the user
+  with DGUS V7.651's DW_0Font.exe (3 MB, flash font IDs 0-11). make_sd_card.py
+  puts it on the card instead of the base project's broken 0_ASCII_12x24.bin
+  (skipped, and removed from the card). This should also make every 0x11 text
+  control draw (Settings status, sensor boxes) - check on the screen.
+- Home pages 10 and 45: two RTC Display (text) controls, type 0x12 (RTC_FIELDS):
+  "H:Q" (24 h, font width 16) at (10,9) and "W D-M-Y" (width 10) at (104,15).
+- TESTED: this display has NO clock chip and its RTC (VP 0x0010) does NOT count
+  by itself (set 09:29:21, still 09:29:21 6 s later); 0x009C needs a chip.
+  Also, the STM32 R4 board's hardware RTC LSE oscillator was measured running at
+  only ~43% real speed (13 s per 30 s elapsed), which caused the display clock to
+  drift and appear stuck between syncs.
+  FIXED (2026-10-24): `dwin_get_data.py` now uses a software clock anchored to
+  the board's accurate high-speed CPU crystal (`ticks_ms`) after internet NTP/HTTP sync,
+  updating DWIN VP 0x0010 and the hardware RTC every minute with the correct weekday (1..7)
+  and resyncing with NTP every 15 minutes. Verified live on hardware: minute roll-overs
+  (11:43 -> 11:44) execute accurately.
+  Older builds allowed CLOCK_ON_DISPLAY = False for a dot clock. The current
+  page file has no dot-clock control, so keep CLOCK_ON_DISPLAY = True.
+
+DWIN PAGE STUDIO (2026-10-23) - edit pages without code
+- dwin/dwin_studio.py (double-click dwin/DWIN_Page_Studio.bat): tkinter app.
+  Page list + preview with touch buttons drawn (red opens a page, green added,
+  blue list rows, grey special FE codes). Edit: button targets, remove/restore,
+  add buttons (drag), texts on any page (size, colour, bold, optional cover box
+  to hide old words), new list pages (title, BACK target, up to 5 rows, numbered
+  71, 72, ... after the builder's last page; only the last can be deleted).
+  "Deploy to SD card" = make_sd_card.py --keep-memory --sd <chosen drive>.
+- Edits live in dwin/studio_project.json; make_sd_card.py applies them
+  (studio_pages: list pages + texts, edited original pages 0-39 re-encoded in
+  32.icl; studio_touch: retarget/remove/add + list-page buttons). It writes
+  dwin/studio_cache/ (page pictures before text edits, buttons.json) for the
+  app. Without studio_project.json the output is byte-identical to before
+  (checked). Tested with a sample project (list page 71, button on page 45,
+  text on page 10) - built correctly, then removed.
+
+ANIMATIONS 5 SECONDS (2026-10-23)
+- dwin_anim_src.js: 32 frames x 160 ms (5.1 s; 32 divides the 256 icons, so no
+  jump at the loop), ANIM_MAX 56 KB, quality 60/45/32/22/15; if still too big,
+  every 2nd (4th) frame shown 2 (4) times (own iclOf with icon i -> record
+  floor(i/step) % n). make_sd_card.py anim_control: Time 8 (160 ms) on pages
+  66-70 (video pages keep Time 5). Page code updated with
+  blockly/update_dwin_anim_code.py <old dwin_anim_src.js copy>.
+- Tested: simple GIF 32 frames 55 KB (q32); detailed GIF 16 frames x2, 49 KB;
+  110 KB program uploads in 16 s, first run 10.3 s, second 0.1 s, no MemoryError.
+- SD card with the 160 ms timing written and verified (pages 66-70 frame time 8).
+
+BRIGHTNESS ON SETTINGS (2026-10-23)
+- Page 56 bottom strip: 20/40/60/80/100% buttons = return-key touch controls
+  (FE05) writing the level into the HIGH byte (TP_Mode 0x01) of system variable
+  0x0082 LED_Config (standby off in CFG 0x05.2, so D3 = brightness). No board
+  needed. dwin_wifi_ui._brightness(): on page 56 compares 0x0082 with LED_Now
+  (0x0031) and applies it over UART if the display did not, saves the level in
+  dwin_brightness.txt and restores it after a power-on. Tested: board write
+  40% -> LED_Now 40, 100% -> 100. SD written (anim placeholders removed from card).
+
+ANIMATION BLOCK + TWO R4 main.py FIXES (2026-10-23)
+- Block "play animation [click picture] on DWIN screen" (blockly/dwin_anim_src.js,
+  added by add_dwin_anim_block.py, backup blockly/backups/before_anim): a GIF
+  (ImageDecoder) or short video -> 16 frames at 8/s (2 s, source looped),
+  160x104, DwinVideo.encodeFrame JPEG, icon library of 256 icons (frames
+  repeat), <= 40 KB (quality 60/45/32/22, then 8 frames). Stored in user.py as
+  _dw_anim_<tag> = ('tag', nbytes, ('<4096 hex>', ...)) -> await async_dwin_anim().
+- Board (lib_dwin_section.py -> dwin_screen.py): dwin_anim() writes the library
+  into display flash font ID 28 (blocks 224+, header block last, staged in VP
+  0x1002) unless dwin_anim.txt holds the same tag, then VP 0x5220 = 0 and page 66
+  (ANIMATION, Animation Icon control lib 28, icons 0-255, 6 x 20 ms, loop).
+  Tested: 33 KB test GIF, first run 9.9 s, second run 0.5 s. SD card written.
+- Animation memories 1-3: blocks "save animation [pic] to DWIN memory [1-3]"
+  (async_dwin_anim_save, copies only if dwin_anim.txt - now JSON {place: tag} -
+  does not already hold that tag) and "play saved animation [1-3]"
+  (async_dwin_anim_show, instant). Flash font IDs 29/30/31, pages 67/68/69 (VP
+  0x5222/24/26), page 70 ANIMATIONS = 3 live previews, opened from the
+  ANIMATIONS button in the STORAGE header. make_sd_card.py --anim-placeholders
+  writes 29/30/31_AnimMemory*.icl ("NO ANIMATION") - use it ONCE only: flashing
+  those files clears the memories. Later --keep-memory builds remove them from
+  the card. Patch: blockly/update_dwin_anim_blocks.py.
+- main.py fix 1: USB and ESP32 (UART6) data were concatenated per timer tick, so
+  an ESP32 "NET:up"/"STAT:" line landed inside upload chunks and corrupted
+  user.py (SyntaxError, ~1 KB lost). Now each source has its own fragment
+  buffer (_RX / _TAIL dicts, _rx_chunk(data, src)). Affects every big upload
+  while the ESP32 is on. (board_main/main_r4_fixed.py for R3 still has the old
+  code; R3 had no ESP32 attached.)
+- main.py fix 2: run_engine imports lib before compiling user.py; otherwise a
+  ~67 KB program (picture/animation hex) + lib.py's compile ran out of memory.
+
+R4 DISPLAY RETURN WIRE FIXED + WI-FI KEYBOARD (2026-10-23)
+- Root cause of "no reply from the display": the display's connector order is
+  5V, RX4, RX2, TX2, TX4, GND, while board J5 only wires pin 2 (TXD_DISP -> R42 ->
+  PD8) and pin 5 (RXD_DISP <- R41 <- PD9). Fixed with jumpers: display TX2 -> J5
+  pin 2, RX2 -> J5 pin 5, GND -> J5 pin 1, 5V from a board 5V pin (J5 pin 6 is
+  3V3). Verified: page read 0x000A, version 0x5520, write ack 4F4B; dwin_screen
+  runs in normal checked mode (_dw_blind False), slots 1-3 readable.
+- Wi-Fi setup on the display (board_r4/dwin_wifi_ui.py, main.py polls it every
+  idle loop and skips the Settings redraw while the keyboard is open):
+  page 57 has 4 tappable network rows (codes 0x0101-0x0104) + SCAN (0x0110);
+  pages 60/61/62 = keyboard letters/CAPS/symbols, 63/64/65 = pressed-key pages.
+  Keys are DWIN "return key" touch controls (TP_Code 0xFE05, 32-byte records)
+  writing their code to VP 0x5F00; the board reads + clears it (touch
+  auto-upload stays OFF in T5LCFG 0x05, so replies to the board's own commands
+  are never mixed with touch frames). Keyboard text (network, password or
+  ****, status) = dot list at VP 0x5400 (same area as the gesture page).
+  CONNECT sends IOT wifi_connect {ssid, pass, force} (id 70) to the ESP32 and
+  polls the reply; success writes wifi_choice.txt, which stops dwin_get_data's
+  automatic Curio_Labs connect. dwin_get_data keeps wifi_rows (the networks in
+  the 4 rows). Taps are only seen while main.py is idle (not during a program).
+- Board files installed and CRC-verified; key handling tested on the board
+  (row tap -> keyboard, typing, DEL, SHOW). SD card written; user connected from
+  the display successfully on the first try.
+- "No networks" afterwards: the ESP32 firmware (ESP32_CURIO_GATEWAY.ino) leaves
+  WiFi.begin() retrying a saved network that is gone (saved_ssid "A"), and
+  WiFi.scanNetworks() fails during that, so wifi_scan returned []. The ESP32 only
+  retries its saved network at power-on (wifiTryStored). Board-side fix in
+  dwin_get_data: an empty scan while disconnected -> wifi_disconnect (keeps the
+  saved network) + scan again (once per empty streak); auto-join target = the
+  network last connected on the display (wifi_choice.txt = JSON ssid + pass, plain
+  text on the board's flash, like the ESP32's NVS) else Curio_Labs, up to 3 tries
+  per power-on, 2 min apart, only when it is in the scan. Verified: 8-9 networks
+  listed again. Proper fix would be in the .ino (WiFi.disconnect before scanning).
+
+R4 SETTINGS UPDATE (2026-10-22)
+- Follow-up: Settings rows initially had text controls but no touch records, so
+  tapping Wi-Fi/Bluetooth did nothing. The builder now adds tappable rows on
+  page 56: Wi-Fi -> 57, Bluetooth -> 58, Firmware -> 59. Each detail page shows
+  the same live VP status and a plain explanation of the currently unavailable
+  connection setup, with BACK -> 56 and HOME -> 10. Builder output validated:
+  60 pages, page 56 has three 0x11 text controls, pages 57-59 one each, and
+  touch targets 57/58/59. The SD card initially showed No Media, then appeared
+  as E: SDCARD, FAT32, 4096-byte allocation units. Its 64 prior files were
+  backed up and hash-verified at backups/settings_click_rows_before_2026-10-22.
+  The --keep-memory build copied 67 files to the card, hash-verified OK. This
+  Follow-up project was copied to SD; the subsequent live checks below verify
+  that its pages and touch controls are installed on the display.
+- Live follow-up with user after flash: direct UART page switch to 57 showed the
+  WI-FI detail page. A simulated tap at (30,20) on page 57 returned to 56,
+  proving the installed touch record works. User then physically tapped the
+  Wi-Fi row on page 56 -> page 57, BACK -> page 56, and Bluetooth row -> page
+  58; all worked. The initial report of no response was not reproducible after
+  these checks. R4 still has no UART readback from display, so page changes
+  were confirmed by the user watching the screen.
+- Home SETTINGS card (page 10, x360-466) previously opened sensor page 12.
+  It now opens new page 56. SENSOR LIST navigation remains on pages 11-14.
+- dwin/make_sd_card.py builds page 56 with Wi-Fi, Bluetooth, and Firmware
+  labels and three DGUS 0x11 text controls (28 ASCII bytes each) at VP 0x5300,
+  0x5320, 0x5340. BACK/HOME return to page 10. The text record is cloned from
+  the base project's working text control. 32.icl, 14ShowFile.bin and
+  13TouchFile.bin were rebuilt with --keep-memory; 24_SavedPictures.icl and
+  49_Video.icl are excluded, so an SD flash preserves saved pictures and video.
+- board_r4/dwin_get_data.py is the board-side status source. main.py calls
+  refresh() every 10 s while idle (and once at startup). It pushes changed
+  values to those VPs. This periodic push is necessary because the R4 display
+  TX -> PD8 return path is still broken, so the board cannot detect the touch
+  that opens Settings. During Blockly program execution, values may be stale
+  until main.py becomes idle again.
+- Wi-Fi means the optional ESP32 gateway's link, using iot_bus.esp_present()
+  and iot_bus.net_up() fed by NET:up/down over UART6; it does NOT describe the
+  STM32's own radio (there is none). On 2026-10-22, live COM87 checks returned
+  ESP present=False, Wi-Fi up=False. Bluetooth now shows "Gateway not detected"
+  when ESP32 is absent. With a detected ESP32 it shows "Status unavailable"
+  because the current protocol reports no BLE connection state. Neither
+  Wi-Fi network scanning/selection nor Bluetooth device scanning/pairing is
+  implemented in the current DWIN page or gateway protocol. The broken display
+  TX -> PD8 return path also prevents the STM32 from receiving touch choices.
+  Do not substitute a guessed Connected/Disconnected value. Firmware displays the
+  board's os.uname().release plus the R4 main app version r4.6-video.
+- Installed on R4 COM87 using board_main/install_file.py: iot_bus.py (copied
+  into board_r4/ from D:\Arun\stm32_firmware\R4_FIRMWARE), dwin_get_data.py,
+  then main.py. Installer verified file length and CRC for each. Live REPL
+  test returned Wi-Fi "Gateway not detected", Bluetooth "Status unavailable",
+  firmware "MP 1.28.0 / app r4.6-video"; VP writes completed in no-reply mode.
+  Main restarted after each operation. SD E: (SDCARD, FAT32, 4096-byte units)
+  rebuilt and all 64 files hash-verified. Previous complete card saved at
+  backups/settings_before_2026-10-22; pre-update board main/lib/dwin_screen
+  saved under its board/ subfolder. DISPLAY FLASH/VISUAL CHECK STILL PENDING:
+  power off display, insert SD, power on through download, power off, remove SD,
+  power on and open Settings. No display frame readback is available on R4.
+
+SWIPE TUNING UPDATE (2026-10-21, pending display installation/visual test)
+- Connected COM59; display responded on page 10; version register 0x000F =
+  0x5520. Board main.py restarted successfully after read-only diagnostics.
+- User reports slightly jerky swiping. Prepared a trial reducing end-animation
+  step from 24 to 12 pixels/DGUS cycle on pages 10 and 45. Sensitivity unchanged
+  (10 x 40 ms, 100 pixels) to isolate the finishing-animation change.
+- Updated make_sd_card.py and DWIN_SET_sd/13TouchFile.bin; verified only the two
+  speed bytes changed. Touch-only package: dwin/swipe_test/DWIN_SET/13TouchFile.bin.
+- Original builder/touch file: backups/swipe_tuning_2026-10-21/.
+- SD prepared: E: SDCARD, FAT32/4096-byte clusters; copied trial touch file and
+  verified SHA256. Full previous SD project backed up and verified in
+  backups/swipe_tuning_2026-10-21/sd_card_before_update/. Other SD files unchanged;
+  no saved-picture or video replacement libraries present. User must now flash
+  the display and visually test. Smaller steps may smooth the finish
+  but lengthen it; no claim of improved finger tracking or measured frame rate.
+  Flash via SD and compare both swipe directions; saved image/video libraries
+  are not included in the touch-only package.
+
+Folder: D:\Arun\display_with_stm32
+Written: 2026-10-20. Covers the work done 2026-10-13 .. 2026-10-20.
+
+Read sections 1-3 first. Section 9 lists the traps that cost the most time.
+
+
+1. HARDWARE
+-----------
+Current board : "MOTHER BOARD R3" (MicroPython reports CURIOMAKERS_LAB_V1 with
+                STM32H743ZIT6), MicroPython v1.28.0. USB shows up as COM59
+                (serial, VID F055) plus a small USB drive (the board's flash;
+                its drive letter changes, E: or F:). Schematic:
+                D:\Download\MOTHER BOARD R3 CIRCUIT.pdf
+Display       : DWIN DMG48320C035_03W, 3.5" 480x320, T5L chip, DGUS II.
+                Wired to the board's UART1 header: PA9 = TX, PA10 = RX,
+                115200 baud 8N1. (The dedicated LCD connector J5 is USART3,
+                PD8/PD9 - not used.)
+Old board     : "CURIO_H743" with an ST7796 480x320 SPI TFT + FT6336U touch
+                (I2C 0x38). Project files in TFT_LAYOUT\TFT_LAYOUT. See section 10.
+
+PC tools used : Python 3.10 with pyserial and Pillow, mpremote, mpy-cross,
+                Node.js (syntax checks), Chrome (Web Serial, Blockly page).
+
+
+2. FOLDER MAP
+-------------
+board_main\
+  main_r4_fixed.py     The board's main.py (installed). Blockly engine, version "r4.6-video".
+  main_r4_original.py  The R4 main.py as received (kept for reference; has the bugs in 3.3).
+  lib_dwin_section.py  SOURCE of the DWIN display functions (appended to lib.py).
+  lib_with_dwin.py     = original lib.py + lib_dwin_section.py. This is the board's lib.py.
+  install_file.py      Safe way to copy a file to the board (see 7.1). USE THIS, not mpremote cp.
+blockly\
+  index.html           The Blockly IDE (single big file, CRLF line endings, Blockly 12.5.1).
+  dwin_blocks_src.js   Source of the "DWIN Screen" blocks (also inserted inside index.html).
+  add_dwin_blocks.py, add_repl_guard.py, fix_repl_guard_timing.py,
+  move_dwin_helper_to_lib.py, add_dwin_slot_blocks.py
+                       One-time patch scripts that made the index.html changes (history;
+                       they refuse to run twice).
+  backups\             index.html before each patch.
+dwin\
+  DWIN_SET_bird\       Display project, pages 0-39 (base for every SD card build).
+  DWIN_SET_sd\         Last full SD card build (copy of what is on the SD card).
+  make_sd_card.py      Builds the SD card (pages 40-43, picture library) - see 6.
+  saved_pictures\      slot1-3.png: last pictures read back from the display memories.
+  icl_tool.py          Pack/unpack DWIN .icl picture libraries; dwinify() for JPEGs.
+  dwin_bird.py         Bird-face animation helper (on the board), page switching 15-38.
+  render_bird_pages.py, patch_dwin_set.py
+                       Made the bird pages 15-38 and page 39 (history).
+  img_relay.py         Board-side relay for live image upload from the PC.
+  dwin_image_app.py    PC app (Tk) to send a picture to the display through the board.
+  dwin_image_web.html  Same as a Chrome Web Serial page (build_web.py embeds img_relay.py).
+dwin_project_backup_2026-10-16\DWIN_SET
+                       The display's ORIGINAL SD card project as received.
+backups\               Older backups (backups\lib_before_dwin\lib.py = original board lib.py).
+TFT_LAYOUT\TFT_LAYOUT  Old ST7796 board project (section 10).
+preview\               PNG previews of the old board's faces.
+
+
+3. THE BOARD SOFTWARE (STM32, MicroPython)
+-----------------------------------------
+3.1 Files that must be on the board
+  main.py          <- board_main\main_r4_fixed.py
+  lib.py           <- board_main\lib_with_dwin.py
+  asyncio.py, uasyncio.py, system_status.py, ui.py
+                   <- D:\Download\New folder (2)\New folder (2)\ (company reference copy;
+                      same sizes as the board's originals)
+  dwin_bird.py     <- dwin\dwin_bird.py
+  boot.py          MicroPython default (USB = serial + drive). See 9.10 about the lost original.
+  user.py          written by the Blockly page on every upload.
+
+3.2 main.py protocol (text over USB serial)
+  UPLOAD                      erase user.py
+  @@START <code> @@END        save <code> as user.py; main.py adds the header
+                              "import system_status / from lib import * / import asyncio"
+                              and prints ">> Upload complete."
+  PLAY                        run user.py (calls main() or start()); prints ">> Executing..."
+                              and ">> Ready." when it ends
+  STOP                        stop the running program (watcher task raises KeyboardInterrupt;
+                              if the program does not stop within 3 s the board resets)
+  MAINVER?                    -> "MAINVER:r4.6-video"
+  LIBVER?                     -> "LIBVER:" + lib.VERSION (our lib.py has none -> "?")
+  @@FILE:lib.mpy:<sha256>\n<base64>@@FILEEND   library update (only lib.mpy allowed)
+  SOFT_RESET, HARD_RESET      reset words (the page's reset buttons)
+  Commands are only recognised OUTSIDE @@START..@@END, so program text may contain any word.
+
+3.3 What was fixed in main.py (r4 -> r4.6)
+  - USB receive had no flow control: big uploads lost bytes ("IndentationError" on the
+    board). Now usb.init(flow=USB_VCP.RTS). 28 KB uploads are byte-exact in ~3-5 s.
+  - Words like PLAY/STOP/UPLOAD inside the program text (even "DISPLAY") triggered commands.
+  - On MicroPython 1.28 an exception raised in a scheduled timer callback is only printed,
+    so the old STOP never stopped programs. Now a watcher task in the event loop does it.
+  - Errors in the main loop no longer end main.py (Ctrl-C still exits to the prompt).
+  - Data is received by a 10 ms soft timer (stop_checker -> _INBOX); only the main loop
+    touches BUFFER.
+  - r4.5: the uploaded program is never held in memory as a whole (a 29 KB upload used to
+    fail with "memory allocation failed" on a fragmented heap). Incoming text goes into one
+    fixed 16 KB buffer (allocated at start-up); only the last 4 characters are held back to
+    find "@@END". A program up to 16 KB is written to user.py in one go at @@END; a bigger
+    one is written 16 KB at a time as it arrives. (r4.4 wrote user.py.new + rename; that
+    cost ~5 s extra per upload and was dropped - an interrupted big upload now leaves a
+    partial user.py: upload again.)
+    After a program ends its module is removed at once (sys.modules.pop("user")), so its
+    picture data no longer blocks the next upload.
+    Upload time is set by the flash (section 9.13): measured 4.5 s for a tiny program,
+    ~14 s for 27-68 KB (earlier, on a freshly formatted flash, 27 KB took 2.4 s).
+
+3.4 lib.py DWIN section (board_main\lib_dwin_section.py)
+  Blocks call the async versions; every function also has a plain version.
+  dwin_image(img)      draw a picture on page 39 (~10 s; the 115200 baud UART is the limit)
+  dwin_clear()         remove it
+  dwin_page(n)         switch display page
+  dwin_save(slot)      slot 1-3: save the picture on page 39 into the display's own memory
+                       AND refresh the PROJECTS LIST pages (~10 s after dwin_image, ~20 s
+                       otherwise because the pixels must be read back from the display)
+  dwin_show_saved(slot) show a saved picture again (0.13 s, no picture data on the UART)
+  img = (width, height, enc, data): RGB565 big-endian pixels, max 160x106,
+        enc 1 = zlib-compressed, enc 0 = raw; data = lowercase hex, either one string or
+        (what the Blockly "show image" block makes now) a tuple of strings of at most
+        4096 characters. One long string literal makes "import user" need one large free
+        block (it failed at 37 KB); short pieces do not. The hex is decoded through two
+        reusable buffers (compressed data 32 KB, pixels 34 KB), allocated once.
+  How a picture is drawn: page 39 has two "Basic Graphic" controls that redraw a list of
+  dots from display memory every frame: VP 0x1000 (max 6900 dots) and VP 0x8400 (max
+  10560 dots). Each dot = x, y, colour; each picture pixel becomes a 3x3 dot. Frames of
+  40 dots, each acknowledged by the display (5A A5 03 82 4F 4B), resent up to 3 times.
+  Memory: one reusable 34 KB pixel buffer; the last drawn picture is kept for dwin_save.
+  The zlib picture data is decoded by lib.py's own decoder (_dw_inflate, after puff.c)
+  straight into that buffer. MicroPython's deflate module is NOT used: it needs a separate
+  32 KB window block and failed with MemoryError after a few runs.
+  The JPEG encoder (dwin_save) reads the RGB565 pixels directly (no 3 x 17 KB colour
+  planes - those failed with MemoryError) and uses the idle compressed-data buffer as its
+  8 KB working buffer, so a save allocates no large block.
+
+3.5 How saving works (two places in the display)
+  a) Display database (on-chip flash, 160K words): VP command 0x0008 copies VP memory
+     <-> database inside the display. Slot = 4-word header "DWIM" + region A (20704
+     words) + region B (31684 words). This is what dwin_show_saved() loads (instant).
+  b) Picture library 24_SavedPictures.icl in the display's 16 MB flash (font ID 24-25):
+     icons 0-2 = thumbnails 120x80, icons 3-5 = large views 408x272, each at a fixed
+     32 KB-aligned place. The STM32 makes the JPEGs itself (pure Python encoder in lib.py,
+     baseline 4:4:4, standard Huffman tables, quality 85, lowered automatically if a picture
+     does not fit) and writes them with VP command 0x00AA (32 KB block writes, staged in
+     VP 0x1002 / 0x8402). Icon controls on pages 40-43 show them, so the PROJECTS LIST
+     follows every save without an SD card.
+
+3.6 Video (2026-10-21) - short silent clip played by the display itself
+  - Blockly: click the picture in the "play video" block (like "show image") and choose
+    a video; it is sent to the screen at once (needs the board connected) and the block
+    keeps only a 48x32 preview + name/frames/seconds/KB in its saved state (the toolbox
+    button of the first version was removed by update_dwin_video_block.py; backup in
+    blockly\backups\before_video_block). The browser
+    (blockly\dwin_video_src.js, inserted into index.html by add_dwin_video.py) cuts the
+    video into 240x160 frames at 10 per second, max 256 frames = 25.6 s (longer videos:
+    only the start), encodes them with a JavaScript copy of lib.py's JPEG encoder
+    (byte-identical output, tested), quality 75 (lowered to 60/45/30 if > 3.75 MB), and
+    builds an icon library: 256 icons; a shorter clip is repeated (repeated icons point to
+    the same data). It is sent through main.py's "DWV" transfer to flash font ID 49
+    (blocks 392-511), header block last. Speed ~4 s per 32 KB part (a 25 s clip of
+    ~2 MB: about 4-5 min; a 5 s clip: under 1 min).
+  - Display: page 44 (VIDEO) has an Animation Icon control (record type 0x01: icons
+    0-255 of library 49, 5 x 20 ms per frame, loop, opaque) at (120,104); it plays while
+    VP 0x5210 = 0 (the value after power-on) and shows icon 0 when it is 1.
+    PROJECTS LIST has a VIDEO button in its header (290,9)-(410,39).
+  - Board: lib.py dwin_video_play() (VP 0x5210 = 0, page 44) / dwin_video_stop() (= 1),
+    blocks "play video" / "stop video".
+  - After "stop video" the VP stays 1, so opening VIDEO from the screen shows it paused
+    until a "play video" block runs or the display restarts (the touch file only switches
+    pages, it does not write the VP).
+  - Flashing the SD card again writes the "NO VIDEO YET" placeholder over the uploaded
+    video (font ID 49) - upload the video again after every SD flash.
+  - main.py "DWV" protocol (r4.6):
+      @@DWV:<first block>:<blocks>\n  -> DWV:READY
+      <hex of up to 4096 bytes>\n      -> DWV:NEXT    (staged in VP 0x1002+)
+      @@DWB:<index>:<crc32>\n          -> DWV:OK i | DWV:ERR i crc   (0x00AA flash write)
+      @@DWV:END\n                      -> DWV:DONE n
+    30 s without data ends the transfer. The page retries a failed part up to 3 times.
+
+
+4. THE DWIN DISPLAY (T5L DGUS II)
+---------------------------------
+4.1 Serial frames
+  5A A5 <len> 82 <VP hi> <VP lo> <data...>   write words to VP memory (reply 5A A5 03 82 4F 4B)
+  5A A5 04 83 <VP hi> <VP lo> <n>            read n words (reply 5A A5 len 83 VP n data)
+
+4.2 System variables used
+  0x0084  page switch: write 5A 01 00 <page>
+  0x0014  current page (read)
+  0x0008  database copy: [5A=read | A5=write][flash word address, 3 bytes][VP][length];
+          poll the high byte of 0x0008 until 0
+  0x00AA  16 MB flash: write mode 5A 02 <32KB block, 2 bytes> <VP of data> <delay ms> 00 00 00 00
+          poll the high byte until 0. Block = font ID * 8. WORKS on this display.
+          Read mode (5A 10 ...) does NOT work on this firmware (no data comes back).
+  0x0004  display reset: write 55 AA 5A A5
+  0x00D4  touch simulation: write 5A A5 00 04 <x> <y>  (used to test buttons over UART)
+
+4.3 Pages
+  0-9    boot animation          10  HOME (cards: PROJECTS LIST, SENSORS LIST, AI PROJECTS, SETTINGS)
+  11-14  sensor list pages       15-38  bird faces: 8 moods x 3 frames (happy 15, sad 18,
+                                        angry 21, surprised 24, love 27, sleepy 30, excited 33,
+                                        curious 36)
+  39     image page (Basic Graphic controls, HOME corner 420,290-479,319)
+  40     PROJECTS LIST (3 cards with thumbnails, VIDEO button)   41-43  saved picture 1/2/3
+  44     VIDEO (Animation Icon control playing library 49)
+  45     HOME page 2 (home NEXT): STORAGE card      46  STORAGE (3 pictures + VIDEO, 2 x 2)
+  47-49  saved picture 1/2/3 and 50 VIDEO, opened from STORAGE (BACK -> 46); same icons /
+         animation control as 41-44, so they follow every save and video upload.
+  51     AI PROJECTS: Image / Voice / Pose / Gesture Classification cards, drawn like the
+         web app's "Start a New Project" (pictures cropped from dwin\art\ai_projects_ref.png)
+  52-55  one information page per type (picture, description, 3 steps); BACK -> 51.
+         These pages only show information - no AI runs on the display.
+  Home card targets: PROJECTS LIST -> 40, SENSORS LIST -> 11, AI PROJECTS -> 51 (was 15, the
+  bird faces; programs still show those with the page block), SETTINGS -> 12;
+  home NEXT -> 45 (was 11). SWIPE REMOVED 2026-10-23 at the user's request (the slide()
+  line in make_sd_card.py build() is commented out; NEXT / PREVIOUS only). When it was on,
+  pages 10 and 45 also switched by swiping: a Page Sliding touch
+  control (TP_Code 0xFE0B, 32-byte record = 16-byte header + 16 bytes starting FE: prev
+  page, next page, moving Y range 48-319, response 10 x 40 ms, min drag 100 px, end
+  animation 24 px/cycle), first record of its page = highest touch priority.
+  Extended touch records (FE/FD codes) are 32 bytes - tools reading 13TouchFile.bin must
+  not assume 16 bytes per record.
+
+4.4 VP (display memory) map
+  0x1000-0x50DF  page 39 region A dots (also staging area for flash writes)
+  0x5200         icon controls' VP, must stay 0 (also Profile Avatar icon VP on Home 10/45)
+  0x5210-0x5211  video animation control (0 = play, 1 = stop)
+  0x5400-0x5AFF  gesture live / WiFi keyboard dot text
+  0x5500         PROJECTS_DOTS_VP (dot text on 5 sensor card pages 40, 41, 71, 72, 73)
+  0x5F00         KEY_VP (Wi-Fi / Bluetooth keyboard return key codes)
+  0x5F50         PORT_TEST_KEY_VP (Port test keyboard return key codes)
+  0x5F60         PROJECTS_KEY_VP (Projects List header touch keys: 0x0501=PLAY, 0x0502=STOP)
+  0x6100-0x8310  the original project's texts/icons - do not overwrite
+  0x7340         Settings (Pages 56-59) dot text
+  0x8030-0x808F  sensor cards text fields
+  0x8400-0xFFC3  page 39 region B dots (also staging)
+  0xFFF0-0xFFF3  scratch (slot header)
+
+4.5 Flash map (16 MB, 256 KB per font ID, 32 KB blocks)
+  ID 0       0_ASCII_12x24.bin       ID 13  13TouchFile.bin     ID 14  14ShowFile.bin
+  ID 22      22_Config.bin (copied into VP 0x1000-0xFFFF at every boot; all zeros)
+  ID 24-25   24_SavedPictures.icl (blocks 192-204)
+  ID 32-35   32.icl (the page pictures)     ID 48  48_SensorIcons.icl
+  ID 49-63   49_Video.icl (video frames, up to 3.75 MB; placeholder on the SD card)
+  On-chip database (separate): saved picture slots 1-3.
+
+4.6 File formats (decoded from this project's own files)
+  .icl    'DGUS_3' + CRC-16/MODBUS of bytes 8.. (little-endian) + length (BE32) + 04 00 +
+          last index (LE16) + offsets (BE32 each) + records: w, h, header length, scan
+          length + JPEG. JPEGs must be baseline 4:4:4; the scan data must start 4-byte
+          aligned (the SOS segment is zero-padded) and the scan is zero-padded to a multiple
+          of 4 (icl_tool.dwinify). A wrongly aligned JPEG makes the display hang until it is
+          powered off. Page pictures: Pillow quality 90, subsampling=0, optimize=True.
+          Pillow cannot decode the padded JPEGs strictly - strip the padding to check them.
+  14ShowFile.bin  "\x14DGUS_2", bytes 9-10 = last page (LE); page table at 0x10, 4 bytes per
+          page: control count (LE16) + byte offset (BE16); 32-byte control records, byte 1 =
+          type (0x00 variable icon, 0x11 text, 0x21 basic graphic), bytes 6-7 = VP.
+  13TouchFile.bin 16-byte records: page, x0, y0, x1, y1, target page, FF 00 00 00; ends FF FF.
+  Variable icon record: 5A 00 FF FF 00 0A VP x y Vmin Vmax IconMin IconMax Lib Mode 0 0 0 3F 0..
+  Animation icon record: 5A 01 FF FF 00 0D VP x y Reset Vstop Vstart IconStop IconStart IconEnd
+          Lib Mode Layer IconGamma PicGamma Time(DGUS cycles of 20 ms) Loop(0)/Single(1) Filter
+  T5LCFG.CFG 0x0A-0x0B = UART baud divider (baud = 3225600 / value; 0x1C = 115200,
+          0x07 = 460800 is the fastest exact standard rate; 921600 is NOT possible).
+
+
+5. THE BLOCKLY PAGE (blockly\index.html)
+---------------------------------------
+- Category "DWIN Screen": show image (click the picture to choose a file), clear image,
+  DWIN screen page, save picture to memory 1-3, show saved picture 1-3.
+- "show image" packs the picture in the browser: fit into 160x106 (black bars), RGB565,
+  zlib (CompressionStream) when smaller, lowercase hex. It is stored inside the block, so
+  it is saved with the project. Generated Python: _dw_img_<hash> = (160, 106, enc, (
+  '<4096 hex chars>', ...)) and the calls; all the display code is in lib.py.
+  (blockly\chunk_dwin_image_data.py made the change to pieces; a detailed photo gives a
+  ~38 KB program, an incompressible picture up to ~68 KB.)
+- Uploads over 4 KB use 512-byte chunks / 2 ms (the board has flow control).
+- Before PLAY and uploads the page sends a newline: if the board answers with the Python
+  prompt ">>> " (main.py not running) it restarts main.py first (Ctrl-C, Ctrl-B, wait for
+  the prompt, Ctrl-D). Soft Reset / Hard Reset buttons send these control keys over USB.
+- The page's own "library update" (LibraryUpdater) downloads lib.mpy from the Curio cloud.
+  The board runs lib.py, which MicroPython prefers over lib.mpy, so such an update has no
+  effect until the DWIN section is merged into the company's lib source.
+
+
+6. SD CARD FOR THE DISPLAY
+--------------------------
+- The card MUST be FAT32 with 4096-byte allocation units, otherwise the display ignores
+  it and keeps its old project:  format E: /FS:FAT32 /A:4096 /Q /V:SDCARD
+  (or File Explorer > Format > FAT32, 4096 bytes). Files go in <card>\DWIN_SET\.
+- Build and copy:  cd dwin  then  python make_sd_card.py --sd E:
+  It reads the three saved pictures from the display through the board (close the
+  Blockly page's USB connection first), builds DWIN_SET_sd from DWIN_SET_bird plus pages
+  40-43, 24_SavedPictures.icl, icon controls and touch buttons, copies it to the card and
+  verifies every file. "--no-read" rebuilds from saved_pictures\ without the board.
+  "--keep-memory" (pages only, no board needed): leaves 24_SavedPictures.icl and
+  49_Video.icl out and removes old copies from the card, so a display flashed before keeps
+  its saved pictures and uploaded video. Use it for every later page change.
+- Never put 32_diagnostic.icl on a card (its name clashes with 32.icl).
+- Flashing: power the display off, insert the card, power on, wait for the download
+  screen to finish, power off, remove the card, power on.
+- With the live PROJECTS LIST (section 3.5 b) this only has to be done once; later saves
+  update the pictures over UART.
+
+
+7. PROCEDURES
+-------------
+7.1 Copy a file to the board
+    Close the Blockly page's USB connection, then:
+      cd board_main
+      python install_file.py lib_with_dwin.py lib.py
+    It stops main.py's receive timer, sends the file in checked pieces to "<name>.new",
+    compares the CRC, renames, and restarts main.py. Do NOT unplug or reset the board
+    while it runs. Do not use "mpremote cp" (it stalls around 31 KB on this board and has
+    left truncated files), and do not write through the board's USB drive.
+7.2 After changing lib_dwin_section.py (from the project folder, Windows cmd)
+      copy /b backups\lib_before_dwin\lib.py + board_main\lib_dwin_section.py board_main\lib_with_dwin.py
+      mpy-cross -march=armv7emdp -o %TEMP%\check.mpy board_main\lib_with_dwin.py
+          (syntax check only; -march is needed because of @micropython.native)
+      cd board_main  then  python install_file.py lib_with_dwin.py lib.py
+7.3 After a board wipe: install the files in 3.1 with install_file.py, main.py last.
+7.4 Talking to the board by hand: install_file.Board in board_main\install_file.py is a
+    small raw-REPL client (enter_raw(), run(code), back_to_main()).
+7.5 Checking the display without seeing it: read 0x0014 (page), simulate a tap with
+    0x00D4 and read the page again (for example tap (60,150) on page 10 -> 40 means the
+    new SD project is loaded, 12 means the old one).
+
+
+8. TESTING THAT WAS DONE (2026-10-20)
+------------------------------------
+- Uploads: 28 KB programs byte-exact at 512 B / 2 ms; programs containing STOP/PLAY/
+  UPLOAD/DISPLAY saved exactly.
+- Image: drawn in ~10 s; the display's VP memory read back = all 106 rows.
+- Saved pictures: save 1.5 s, show 0.13 s, regions identical (CRC) after show.
+- JPEG encoder: Huffman tables identical to libjpeg's standard ones; PC decode of the
+  icons OK (thumbnail ~37 dB, view ~45 dB vs. the source); display kept answering while
+  drawing them; 0x00AA write proven by writing a marker into font ID 22, resetting the
+  display and finding it in VP memory (then restored).
+- Memory: 6 cycles of upload + PLAY with 24-27 KB photo programs (every second one also
+  saves to memory 3) - runs 10 s / 18.7 s, no errors, free memory steady at ~303-305 KB.
+  Then 6 cycles alternating a 38 KB detailed photo and the 68 KB worst case (both in the
+  new piece format, from the real Blockly page): all uploads and runs OK, ~280 KB free.
+  Then show + save with a 55 KB photo program, and show-saved + save of memories 1-2
+  (pixels rebuilt from the display): all saves updated the PROJECTS LIST, >= 224 KB free.
+- zlib decoder: exact on browser-made data, photos at zlib levels 0/1/6/9, random data,
+  tiny inputs and long matches; truncated / wrong data rejected.
+- The test scripts lived in a temporary folder and are not part of the project; the
+  approach was: (1) run lib_dwin_section.py on the PC with a fake UART that emulates the
+  display (VP memory, database, flash), (2) upload small programs through main.py and
+  read the display's memory back over UART.
+
+
+9. TRAPS AND LESSONS
+--------------------
+9.1  The board's flash can be wiped. If the board resets while MicroPython writes a file,
+     the filesystem may break and MicroPython formats it at the next boot (happened on
+     both boards). Keep copies of every board file on the PC; never unplug during writes.
+9.2  Do not let a script grab the board's port automatically when the page disconnects:
+     on 2026-10-20 that collided with a replug and wiped the board.
+9.3  After Ctrl-C ends main.py, the ">>> " prompt appears ~1.5 s later and keys sent in
+     that gap are lost. main.py's receive timer keeps running at the prompt and steals
+     serial input - stop it (stop_checker.deinit()) before raw-REPL work.
+9.4  If PLAY "does nothing", the board is probably sitting at the Python prompt (it echoes
+     the command and shows ">>>" or "..."). Soft reset (Ctrl-D) brings main.py back; the
+     page now does this by itself.
+9.5  The display only accepts SD cards with 4 KB clusters (section 6).
+9.6  The display's flash READ command does not work; verify writes another way (4.2).
+9.7  JPEG alignment rules (4.6); a bad JPEG hangs the display until power-off.
+9.8  Memory on the board (~370 KB free after lib import, ~300 KB during a picture program):
+     plenty in total, but big CONTIGUOUS blocks (30 KB+) get hard to find after a few runs.
+     Avoid growing strings/buffers and big temporary copies; reuse fixed buffers.
+9.13 Writing files on the board's flash is slow and varies: each f.write() call costs
+     ~1.5 s plus ~0.2 s per KB (12 KB file: 1 write 4.3 s, 24 writes 40 s). Use few,
+     large writes (main.py writes uploads in 16 KB pieces).
+9.14 install_file.py checks files in 4 KB pieces; reading a 100 KB file in one go on the
+     board fails with MemoryError.
+9.9  mpy-cross needs -march=armv7emdp for files with @micropython.native/viper.
+9.10 Files LOST in the 2026-10-20 wipe (never backed up, not used by main.py/lib.py):
+     the board's own boot.py (1420 bytes), device_id.txt, motor_cfg.json and the folders
+     AI_LIB, With_device_id, Without_while, multiple_start_working_code,
+     stop_auto_main_execution. Restore them from the company's firmware package.
+9.11 Drive letters move: the SD card reader and the board's USB drive swap between E: and
+     F:. Check the label (SDCARD vs STM32H743ZI) before writing anything.
+9.12 Bash heredocs on this PC mangle backslash escapes in Python code - write such files
+     with an editor.
+
+
+10. OLD BOARD: CURIO_H743 + ST7796 TFT (TFT_LAYOUT\TFT_LAYOUT)
+--------------------------------------------------------------
+- MicroPython 1.27 board, USB serial only (boot.py sets pyb.usb_mode('VCP') after the
+  board was wiped twice by Windows writing to its USB drive). COM86 at the time.
+- Files: main.py (menu), ui.py, tft.py (ST7796 driver with a viper FAST window path,
+  ~7x faster), touch.py (FT6336U, alive()/recover() auto-recovery), font.py,
+  startup_face.py, brand_face.py (LED dot-matrix face v3, the user's preferred look;
+  paint_reaction()), face_reactions.py (LED face moods), face_reactions2.py (Eilik-style
+  eyes + mouth), face_reactions3.py ("Birdie" bird pet), face_reactions4.py ("Glow"),
+  touch_test.py. Upload all of them with mpremote to restore the board.
+- The panel cannot be read back (no MISO), so visual checks were done with PC previews
+  (preview\). Draw-call count is the main cost (~76 us per fill_rect + ~1.2 us/pixel).
+- Backups of each step: backups\before_<change>\.
+
+
+10b. NEW BOARD: CM MOTHERBOARD R4 (2026-10-22)
+---------------------------------------------
+- STM32H723ZGT6, MicroPython 1.27, USB COM87 (drive F:). Schematic:
+  D:\Download\CM_MOTHERBOARD_R4 CIRCUIT (1).pdf. Display on connector J5: pin 1 GND,
+  pin 2 TXD_DISP = PD8, pin 5 RXD_DISP = PD9 (22 R each), pin 6 = 3V3 (!).
+  PD8 / PD9 = USART3 (AF7). UART3's default pins PB10 / PB11 go to JACK3.
+- J5 is wired straight (display TX to J5 pin 2, display RX to pin 5), so USART3 runs
+  with CR2.SWAP: the STM32 sends on PD9, listens on PD8. Tested: the display obeys at
+  115200 + SWAP only (bird face test).
+- OPEN: the display's replies never reach the board (PD8 never moves; all GPIOs
+  scanned, 18 ms captures). The board therefore runs the display code in "no-reply"
+  mode (below). Fix the display TX -> J5 pin 2 -> R42 -> PD8 path; nothing else to change.
+- Board files (originals in backups\r4_board_original_2026-10-22\):
+    dwin_screen.py  board_r4\dwin_screen.py, built by board_r4\make_dwin_screen.py from
+                    board_main\lib_dwin_section.py (same picture / save / video code as R3;
+                    UART3 + SWAP; own module because lib.py is already 142 KB)
+    lib.py          the R4 company lib.py + "from dwin_screen import *" at the end
+                    (board_r4\lib.py). Import 0.43 s, 350 KB free afterwards.
+    main.py         board_r4\main.py = board_main\main_r4_fixed.py (r4.6-video) with the
+                    video transfer importing dwin_screen. Replaces the R4 main.py, which
+                    wrapped every start block in "while True" (programs now run once, as
+                    on R3) and had no upload acks / flow control / video transfer.
+  Install: cd board_main  then  python install_file.py ..\board_r4\<file> <file>
+- No-reply mode (automatic when the first frame gets no OK): frames are sent without
+  waiting, database copies wait 150 ms + words/8 ms, flash block writes wait 1 s, a
+  saved slot is shown without checking it is filled, and save-to-PROJECTS LIST only
+  works for a picture this board drew (the screen cannot be read back). Once replies
+  arrive, the normal checked mode is used again automatically after a reset.
+- Tested on R4 (no-reply mode): image program uploaded like Blockly + PLAY, drawn in
+  9.8 s; 40-frame test video through the DWV transfer, 161 KB in 28 s, then played.
+- The R4 lib's own sensor-box DWIN code (section 29, _DWIN_UART_ID = 1) still uses
+  UART1 and is not wired to J5 on this board.
+- LIVE INTERNET DATE & TIME ON HOME PAGES 10 & 45 (2026-10-22):
+  - Automatic time synchronization implemented via Wi-Fi:
+    1. Once Wi-Fi is connected, `dwin_clock.py` automatically requests UTC time
+       via NTP (`op: time`) with HTTPS fallback (`timeapi.io`), applies local timezone
+       offset (+05:30 IST), and sets the STM32 hardware RTC.
+    2. Verified live on STM32 COM88:
+       `STATUS: {'source': 'http', 'time': '2026-10-22 17:46:35', 'valid': True}`
+       `LOCALTIME: (2026, 10, 22, 17, 46, 35, 3, 295)`
+    3. Home pages 10 & 45 top bar:
+       The previous static baked-in text "10:42 AM MON 05 OCT 2026" was blanked in
+       `dwin/make_sd_card.py` and replaced with Basic Graphic 0x21 dot controls at
+       `VP 0x7880` (below page-39 region B).
+    4. Render format on display (1-dot-per-cell 5x7 font for 3x3 hardware dot renderer):
+       - IMPORTANT: The DWIN 0x21 Basic Graphic control renders every (x, y) dot as a
+         3x3 pixel block in hardware! Emitting 1px-spaced dots or 2-column-thick stems
+         causes adjacent 3x3 hardware dots to overlap and fill in character loops.
+       - The live clock and NTP/HTTP time synchronization have been merged into
+         `board_r4/dwin_get_data.py` (which manages both Settings Wi-Fi/BLE and the
+         Home live clock), using a dedicated 1-cell-thick 5x7 bitmap font (`_GLYPHS`)
+         with `step=3` for time digits (15x21 px, 9px open centers) and `step=2` for
+         yellow AM/PM and white date text (10x14 px, 5px open centers).
+       - dwin_clock.py (shim) and clock_font.py (old clock font) were deleted from the
+         board on 2026-10-23 - nothing imported them; copies in
+         backups/clock_merge_before_2026-10-23. The clock is only in dwin_get_data.py.
+    5. SD card files rebuilt in `dwin/DWIN_SET_sd` (`32.icl`, `14ShowFile.bin`).
+       Already flashed to the display via SD card; font/layout updates in `dwin_clock.py`
+       only require installing `dwin_clock.py` to the STM32 board (no SD flash needed).
+
+- ESP32-S3 Gateway & Standalone DWIN Settings on R4 (2026-10-22):
+  - Root cause of Page 57 (WI-FI) scan/status & UART6 diagnostic behaviour (2026-10-22):
+    1. Onboard ESP32-S3 is powered, healthy, connected to Wi-Fi, and talking to
+       STM32 over UART6 (PC6/PC7 with CR2.SWAP at 921600): `iot_bus` receives
+       `NET:up` every 5 s and `iot_bus.call('wifi_check')` returns
+       `{'id': 101, 'code': 200, 'body': '1', 'err': ''}` immediately.
+    2. Why `wifi_scan` / `status` returned no scan data: at 16:51:46 on 2026-10-22,
+       Arduino IDE compiled/uploaded the older 2026-08-06 sketch from
+       `D:\Arun\blockly_img_voice-model_new\esp32-s3_firmware\ESP32_CURIO_GATEWAY\ESP32_CURIO_GATEWAY.ino`
+       (21,271 bytes), which only supports `http`, `wifi_check`, and `ts_*` and
+       replies `IOTR:{"code":0,"body":"","err":"bad-op:wifi_scan"}` /
+       `"bad-op:status"` without `STAT:` broadcasts. Synced the updated
+       `ESP32_CURIO_GATEWAY.ino` into that folder (old copy backed up at
+       `backups/ESP32_CURIO_GATEWAY_old_2026-08-06.ino`).
+    3. Why `board_r4/test_esp32_standalone.py` printed `NO ESP32 TRAFFIC` /
+       `NO REPLY`: `sys.modules.get("__main__")` returns `None` in MicroPython
+       unless `__main__` is imported, so `main.py`'s 10 ms `stop_checker` timer
+       was never deinitialized and consumed `uart.read()` into `iot_bus._inbox`
+       before `_lines()` could read it. Fixed `test_esp32_standalone.py` to use
+       `import __main__; getattr(__main__, "stop_checker", None).deinit()`.
+    4. Updated `board_r4/dwin_get_data.py` (and installed on COM88) so Page 57's
+       Basic Graphic `0x21` dot control at `VP 0x6800` probes with both `status`
+       and `wifi_check`, detects `bad-op:*` legacy firmware cleanly (`Wi-Fi link
+       up (ESP32)` / `Old ESP32 fw (no STAT/scan)`), and automatically switches
+       to `Connected: <SSID>`, `IP: <IP>`, and `1..4` scanned 2.4 GHz SSIDs as
+       soon as the updated `ESP32_CURIO_GATEWAY.ino` is flashed to the ESP32-S3.
+  - Follow-up for blank WI-FI page (user screenshot, 2026-10-22): the former
+    page 57 had only a DGUS 0x11 text control in its Current status box; this
+    panel does not render those controls, and the sentence about available
+    networks was static bitmap text, not a real list. Rebuilt page 57 with a
+    Basic Graphic 0x21 dot control at VP 0x6800 (same proven method as live
+    gesture page). board_r4/dwin_get_data.py now draws Wi-Fi state/IP and up
+    to four scanned 2.4 GHz SSIDs. It requests IOT wifi_scan asynchronously
+    every 60 seconds and consumes reply id 50; main.py's USB/PLAY loop does not
+    block during a scan. The list is view-only: DWIN TX/touch feedback to
+    STM32 still is not reliable, so tapping a network cannot connect it.
+    VP 0x6800 plus 1900 maximum dots ends below 0x8400 image region B and
+    above 0x6600 project VPs. A local render check produced 1375 dots / 71
+    UART frames for a four-network example; repeated unchanged draw sent none.
+    SD E:/DWIN_SET rebuilt with --keep-memory, all 67 files verified, page
+    57's 0x21 record and VP checked; saved pictures and video were excluded.
+    Board file installed over COM88 with matching CRC and main.py restarted.
+    The user completed the display SD download and confirmed page 57 now
+    renders "Gateway not detected" / "No scan data" as live dots: display
+    rendering is verified. ESP32 COM89 gave no boot or scan response after
+    EN/S2 reset and during a full R4 power cycle; STM32 COM88 still reported
+    esp_present=False afterward. Thus a live network list cannot yet be
+    hardware-verified. The R4 schematic (D:\Arun\stm32_firmware\tmp\pdfs\
+    cm_motherboard_r4\page-2.png) shows ESP 3V3_ESP via FB5 from 3V3,
+    ESP EN pulled up by R21 and grounded by S2, and UART0 TXD0 at J2 pin 1.
+    Next physical checks: measure 3V3_ESP against J2 pin 3 GND, EN high when
+    S2 is released, and J2 TXD0-to-TTL-RX continuity. COM89 being present
+    proves only that the CP210x adapter is powered, not that ESP32 is powered.
+    User has no multimeter and could not perform the S3(GPIO0)+S2(EN) ROM
+    download-mode test in this session; read-only esptool ROM probe is pending.
+    Backup is under
+    backups/wifi_networks_before_2026-10-22.
+  - Wi-Fi detail page mismatch found after live diagnostic: the display and
+    pre-rebuild card showed the old baked-in artwork text "Wi-Fi needs the ESP32 gateway".
+    That sentence is static; it does not indicate a fresh ESP32 check. The
+    current dwin/make_sd_card.py has revised generic Wi-Fi/BLE descriptions.
+    E: SDCARD's 67 old files were backed up and hash-verified at
+    backups/wifi_detail_before_2026-10-22, then rebuilt/copied with
+    --keep-memory; all 67 files verified. Display SD flash still required.
+    This copy changes wording only; the DGUS text controls still do not draw
+    on this display, so do not claim the screen shows live connection status.
+    Later in the same session, after ESP32 reset, COM89 emitted a full boot log,
+    NET:up, STAT: JSON, and successful IOTR responses. The earlier silence was
+    a transient ESP32 boot/power state, not evidence of a permanent UART fault.
+    A repeated standalone STM32 test on COM88 received NET:up and STAT: plus
+    successful wifi_status (connected to Curio_Labs, 192.168.0.30) and
+    ble_status (advertising, no client connected). status and wifi_scan timed
+    out in that one test, but the running main.py then showed esp_present=True,
+    wifi_up=True, scan_count=6, and dwin_get_data.get_data()/refresh(force=True)
+    both returned "Curio_Labs (192.168.0.30)". Thus the current problem is
+    display presentation: page 57 still has the old static sentence until the
+    rebuilt E: card is flashed, and its live 0x11 text field is not rendering.
+  - Standalone link diagnostic added 2026-10-22:
+    `board_r4\test_esp32_standalone.py` is a separate read-only MicroPython
+    test. Run `import test_esp32_standalone; test_esp32_standalone.run()` from
+    a stopped main.py REPL. It listens on UART6 with CR2.SWAP for six seconds,
+    then queries status, wifi_status, ble_status, and wifi_scan. Installed on
+    COM88 with checked transfer; main.py restarted afterwards. Live result:
+    initially no NET:/STAT:/IOTR: bytes, and all four requests timed out. The existing
+    PC-side `ESP32_CURIO_GATEWAY\test_esp32_ttl.py` was also run on COM89/J2
+    at 115200; it got no replies. A direct STATUS? probe on COM89 at 115200
+    and 921600 likewise received zero bytes. iot_bus.status() on the STM32
+    reported ESP present=False, Wi-Fi=False, BLE=False. This localizes the
+    initial failure to ESP32 power/boot state. A later reset restored serial
+    traffic on both COM89 and STM32 UART6 (see result above).
+    No Wi-Fi credentials were changed by these diagnostic runs.
+  - Hardware: ESP32-S3-WROOM-1-N16R8 (16 MB Quad Flash, 8 MB OPI PSRAM, MAC 10:51:db:8f:4e:a0).
+    - Header J2 (CON3): ESP32 UART0 (pin 1 TXD0, pin 2 RXD0, pin 3 GND, 115200 baud). J2 has
+      no DTR/RTS reset wires; hold S3 (GPIO0) + press S2 (EN) to enter ROM download mode, and
+      pass `--after watchdog-reset` to esptool so it reboots into the app after flashing.
+    - Internal STM32 <-> ESP32 UART link (921600 8N1): on the R4 schematic (pages 1-2),
+      ESP32 pin 10 (IO17/TX1) is routed to net ESP32_RX_UC -> STM32 pin 96 (PC6, USART6_TX),
+      and ESP32 pin 11 (IO18/RX1) is routed to net ESP32_TX_UC -> STM32 pin 97 (PC7, USART6_RX).
+      Therefore STM32 USART6 (base 0x40011400) in board_r4\main.py and board_r4\dwin_get_data.py
+      must enable CR2.SWAP (bit 15 while UE=0), just like USART3 for the display.
+  - Firmware (ESP32_CURIO_GATEWAY\ESP32_CURIO_GATEWAY.ino):
+    - Compiled with arduino-cli (`--jobs 2` to avoid cc1plus OOM on Windows):
+      `arduino-cli compile --jobs 2 --fqbn "esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,PartitionScheme=huge_app,CDCOnBoot=default" --output-dir ESP32_CURIO_GATEWAY\build ESP32_CURIO_GATEWAY`
+    - Flashed over J2 TTL (COM89) with esptool (`--after watchdog-reset`).
+    - Keeps full BLE <-> UART bridge ("ESP32-BLE-CURIO_V2", 50 KB PSRAM upload buffers,
+      PLAY/STOP/UPLOAD bypass, IOTR:/LIVE: passthrough) and HTTP/ThingSpeak IoT gateway.
+    - Added periodic (5 s) and event-driven `STAT:{...}\n` JSON broadcasts alongside
+      `NET:up\n` / `NET:down\n`:
+      `STAT:{"wifi_up":true,"ssid":"Curio_Labs","ip":"192.168.0.30","rssi":-51,"scan_count":7,"top_ssid":"Curio_Labs","ble_up":true,"ble_connected":false,"ble_adv":true,"ble_name":"ESP32-BLE-CURIO_V2"}`
+    - Added local `IOT:{...}` RPC operations (handled on Core 0 even when Wi-Fi is offline,
+      accepted on both UART1 from STM32 and UART0 TTL on J2):
+      - `wifi_scan`       -> scans 2.4 GHz networks, deduplicates SSIDs, returns JSON array
+                             `[{"ssid":"...","rssi":-50,"open":false}, ...]`
+      - `wifi_connect`    -> joins `ssid` + `pass` (`force` optional), saves to NVS
+                             Preferences ("curio"), returns `{"connected":true,"ssid":...,"ip":...,"rssi":...}`
+      - `wifi_disconnect` -> disconnects (`forget:true` clears NVS credentials)
+      - `wifi_status`     -> returns connected state, SSID, saved_ssid, IP, RSSI, MAC, scan summary
+      - `ble_status`      -> returns `{"available":true,"connected":...,"advertising":...,"name":"ESP32-BLE-CURIO_V2"}`
+      - `status`          -> returns combined Wi-Fi + Bluetooth status JSON
+  - STM32 & Standalone DWIN Settings (installed on COM88 via board_main\install_file.py):
+    - board_r4\main.py (and board_main\main_r4_fixed.py): enables USART6 CR2.SWAP, routes
+      `STAT:` lines to `iot_bus.set_status()`, and calls `dwin_get_data.refresh()` every
+      2.5 s in the main loop (with no Blockly program needed).
+    - board_r4\iot_bus.py (and board_main\iot_bus.py): stores live `_status` from `STAT:`
+      and provides `call()`, `async_call()`, `wifi_scan()`, `wifi_connect()`,
+      `wifi_disconnect()`, `wifi_status()`, and `ble_status()`.
+    - board_r4\dwin_get_data.py (and board_main\dwin_get_data.py): works both automatically
+      in the background (probing ESP32 status, scanning Wi-Fi when disconnected, auto-joining
+      `DEFAULT_WIFI_SSID = "Curio_Labs"`, and updating VPs 0x5300 Wi-Fi, 0x5320 Bluetooth,
+      0x5340 Firmware so tapping SETTINGS on the display works with zero Blockly blocks) and
+      as a standalone script (`dwin_get_data.main()`, `scan_wifi()`, `connect_wifi()`,
+      `disconnect_wifi()`, `check_status()`).
+    - board_main\lib_dwin_section.py & board_r4\dwin_screen.py: exposes `dwin_wifi_scan()`,
+      `dwin_wifi_connect()`, `dwin_wifi_disconnect()`, `dwin_wifi_status()`,
+      `dwin_ble_status()`, and `dwin_settings_refresh()` (plus `async_*` variants).
+    - Test scripts: `ESP32_CURIO_GATEWAY\test_esp32_ttl.py` (TTL test on COM89) and
+      `ESP32_CURIO_GATEWAY\test_stm32_settings.py` (end-to-end STM32 <-> ESP32 <-> DWIN test on COM88).
+- Live gesture data (2026-10-22): the K230 camera sends "Detected: four (100.0%)" /
+  "not detected" lines on UART7 at 115200 (~10 lines/s; checked on the board). Block
+  DWIN Screen > "show live gesture data from UART 7 on DWIN screen" ->
+  await async_dwin_gesture_live(7) (lib_dwin_section.py, so also in dwin_screen.py):
+  opens page 55 and draws gesture name, confidence and the last line (at most 1x/s)
+  until STOP. TEXT CONTROLS DO NOT DRAW on this display (tested: page 55 text fields
+  stayed empty; the project's font 0_ASCII_12x24.bin is not a plain bitmap font), so the
+  panel is a Basic Graphic dot-list control at VP 0x5400 (copy of page 39's control) and
+  the board draws the letters as 3x3 dots with its own 6x11 font (_DW_FONT_HEX, from
+  Pillow's built-in bitmap font): ~600 dots, 0.25-0.45 s per redraw, VP 0x5400-0x5AFF.
+  The SETTINGS text fields (0x5300-0x5340) are text controls too and likely stay empty.
+  Patch: blockly\add_dwin_gesture_block.py (backup blockly\backups\before_gesture_live).
+  Note: lib.py's K230 gesture functions (async_gesture_detected etc.) read UART1.
+
+
+11. OPEN ITEMS / NEXT STEPS
+---------------------------
+- After the latest SD card flash (2026-10-21, includes the VIDEO page), confirm on the
+  screen that PROJECTS LIST shows the three pictures, that "save picture to memory N"
+  updates it, and that an uploaded video plays smoothly on PROJECTS LIST > VIDEO
+  (playback speed on the display itself was not measurable over UART).
+- Video tests done 2026-10-21: JS encoder byte-identical to lib.py's on 10 frames;
+  the page's full pipeline in headless Chrome on a 3 s VP8 clip (30 frames, all decode);
+  DWV transfer in emulation (corrupted part rejected and resent) and on the real board
+  (40-frame clip, 161 KB, 21.7 s; display kept answering while showing the frames).
+- Restore the lost board files listed in 9.10.
+- Merge lib_dwin_section.py into the company's lib source before using the page's cloud
+  library update (5); give lib a VERSION.
+- Faster drawing: raise the display baud rate (DWIN config) from 115200 to 460800 and
+  change UART1 in lib.py to match (~4x faster). Not done.
+- Smaller JPEGs: optimised Huffman tables in the encoder (not needed so far).
+- IoT Cloud & Kit-to-Kit Communication page (2026-10-29):
+  - Added 4th card `IOT CLOUD` ("kit-to-kit & sync") on HOME page 2 (Page 45, box 360,54..466,254)
+    navigating to Page 96 (`IOT_PAGE`).
+  - Page 96 (`IOT & KIT-TO-KIT`) shows live Wi-Fi status (tapping opens Page 57 Wi-Fi setup),
+    Cloud status (`CONNECTED` / `SYNCED #ch` / `READY ONLINE` / `OFFLINE`), Kit Name/ID
+    (`CURIO-XXXX` derived from STM32 96-bit unique ID + optional BLE label), Send Data (TX),
+    and Receive Data (RX), rendered via Basic Graphic 0x21 dot list at VP 0x5400 (`<= 880` dots).
+  - Three bottom action buttons write to `IOT_KEY_VP = 0x5F80`: `SEND DATA` (`0x0701`),
+    `RECEIVE DATA` (`0x0702`), and `SYNC / ID` (`0x0703`), polled in `dwin_wifi_ui.py` and
+    `lib.py` (`_telemetry_draw`), with state persisted in `iot_state.json` on the STM32 flash
+    by `iot_bus.py`.

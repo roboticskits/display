@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Face Detection</title>
+
+    <!--
+      face-api.js (vladmandic fork) with TensorFlow.js 4.22 bundled in, served
+      from offline_libs so this page works with no network at all - the same
+      rule the rest of the Blockly assets follow, and what lets it run inside
+      the React Native WebView.
+
+      Everything below runs on this device. Camera frames are drawn to a local
+      canvas and passed straight to the model; no frame, descriptor or name is
+      ever uploaded.
+    -->
+    <script src="offline_libs/face-api/face-api.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: #f1f5f9;
+            color: #0f172a;
+            min-height: 100vh;
+        }
+
+        /* ── Header ──────────────────────────────────────────────── */
+        .topbar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 18px; background: #fff;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky; top: 0; z-index: 20;
+        }
+        .back-btn {
+            border: 1px solid #e2e8f0; background: #f8fafc; color: #334155;
+            padding: 8px 14px; border-radius: 8px; cursor: pointer;
+            font-size: 13px; font-weight: 600;
+        }
+        .back-btn:hover { background: #f1f5f9; }
+        .title { font-size: 18px; font-weight: 800; flex: 1; text-align: center; }
+        .privacy-badge {
+            font-size: 11px; font-weight: 700; color: #166534;
+            background: #dcfce7; border: 1px solid #bbf7d0;
+            padding: 6px 10px; border-radius: 999px; white-space: nowrap;
+        }
+
+        /* ── Layout ──────────────────────────────────────────────── */
+        .wrap {
+            display: grid; gap: 14px; padding: 14px;
+            grid-template-columns: minmax(320px, 1.15fr) minmax(300px, 1fr) minmax(300px, 1fr);
+            align-items: start;
+        }
+        @media (max-width: 1100px) { .wrap { grid-template-columns: 1fr; } }
+
+        .card {
+            background: #fff; border: 1px solid #e2e8f0;
+            border-radius: 12px; overflow: hidden;
+        }
+        .card-head {
+            padding: 10px 14px; font-size: 13px; font-weight: 800;
+            border-bottom: 1px solid #f1f5f9; background: #f8fafc;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .card-body { padding: 12px 14px; }
+
+        /* ── Camera ──────────────────────────────────────────────── */
+        .stage {
+            position: relative; background: #0f172a;
+            border-radius: 10px; overflow: hidden;
+            aspect-ratio: 4 / 3; display: flex;
+            align-items: center; justify-content: center;
+        }
+        /* Mirrored so it reads as a selfie view. Detection x is flipped to
+           match (see toStageX) - without that, "move right" would invert. */
+        #video, #stillImg {
+            width: 100%; height: 100%; object-fit: cover;
+            transform: scaleX(-1); display: none;
+        }
+        #overlay {
+            position: absolute; inset: 0;
+            width: 100%; height: 100%; pointer-events: none;
+        }
+        .stage-hint {
+            position: absolute; color: #94a3b8; font-size: 13px;
+            text-align: center; padding: 0 20px; line-height: 1.6;
+        }
+
+        .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+        .btn {
+            border: none; border-radius: 8px; padding: 9px 14px;
+            font-size: 13px; font-weight: 700; cursor: pointer;
+        }
+        .btn-primary { background: #6366f1; color: #fff; }
+        .btn-primary:hover { background: #4f46e5; }
+        .btn-danger { background: #ef4444; color: #fff; }
+        .btn-ghost { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+        select, input[type=text], input[type=number] {
+            border: 1px solid #cbd5e1; border-radius: 7px;
+            padding: 6px 9px; font-size: 12px; font-family: inherit;
+            background: #fff; color: #0f172a;
+        }
+        label.chk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #475569; cursor: pointer; }
+
+        /* ── Block rows ──────────────────────────────────────────── */
+        .blk {
+            border: 1px solid #e2e8f0; border-radius: 9px;
+            padding: 9px 10px; margin-bottom: 9px; background: #fff;
+        }
+        .blk-label {
+            font-size: 11px; font-weight: 700; color: #64748b;
+            display: flex; align-items: center; gap: 6px; margin-bottom: 7px;
+        }
+        .blk-num {
+            background: #6366f1; color: #fff; border-radius: 5px;
+            padding: 1px 6px; font-size: 10px; font-weight: 800;
+        }
+        .blk-ctl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: #334155; }
+        .blk-val {
+            margin-top: 7px; font-family: ui-monospace, Consolas, monospace;
+            font-size: 14px; font-weight: 800; color: #0f172a;
+            background: #f8fafc; border: 1px solid #e2e8f0;
+            border-radius: 6px; padding: 6px 9px; word-break: break-word;
+        }
+        .val-true  { color: #15803d; }
+        .val-false { color: #b91c1c; }
+        .val-none  { color: #94a3b8; font-weight: 600; }
+
+        /* ── Trained classes ─────────────────────────────────────── */
+        .cls-item {
+            display: flex; align-items: center; gap: 8px;
+            border: 1px solid #e2e8f0; border-radius: 8px;
+            padding: 7px 10px; margin-bottom: 6px; font-size: 12px;
+        }
+        .cls-dot {
+            width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-weight: 800; font-size: 11px; background: #6366f1;
+        }
+        .cls-name { font-weight: 700; flex: 1; }
+        .cls-count { color: #64748b; font-size: 11px; }
+        .cls-del {
+            border: none; background: #fee2e2; color: #b91c1c;
+            border-radius: 5px; width: 22px; height: 22px;
+            cursor: pointer; font-weight: 800; line-height: 1;
+        }
+
+        .note {
+            font-size: 11px; color: #92400e; background: #fffbeb;
+            border: 1px solid #fde68a; border-radius: 7px;
+            padding: 8px 10px; margin-top: 10px; line-height: 1.55;
+        }
+        .status {
+            font-size: 12px; color: #475569; padding: 8px 14px;
+            background: #f8fafc; border-top: 1px solid #f1f5f9;
+        }
+        .stale {
+            display: none; font-size: 11px; font-weight: 700; color: #b91c1c;
+            background: #fee2e2; border: 1px solid #fecaca;
+            border-radius: 6px; padding: 6px 9px; margin-bottom: 9px;
+        }
+        .stale.show { display: block; }
+        .fps { font-size: 11px; color: #64748b; font-family: ui-monospace, monospace; }
+
+        /* ── Embedded mode (face.html?embed=1) ───────────────────────────
+           Used when the Blockly "Test Face" panel mounts this page as its
+           engine. The panel is ~380x240, and the full three-column layout
+           squeezed into that shows explanatory text where the user expects
+           the camera — it reads as "the camera isn't on" even while it is.
+           So in embed mode everything collapses to the video plus a status
+           line; the run controls live in the panel instead. */
+        body.embed { background: #000; }
+        body.embed .topbar,
+        body.embed .card-head,
+        body.embed .note,
+        /* The source row stays: it carries Start Camera, which is the only
+           way back if the user denies the permission prompt. */
+        body.embed #camCard .row:not(.row-source) { display: none; }
+        body.embed .wrap {
+            grid-template-columns: 1fr; padding: 0; gap: 0; height: 100vh;
+        }
+        body.embed #camCard {
+            border: none; border-radius: 0; height: 100vh;
+            display: flex; flex-direction: column; background: #000;
+        }
+        body.embed #camCard > .card-body {
+            padding: 0; flex: 1; min-height: 0;
+            display: flex; flex-direction: column;
+        }
+        body.embed .row-source {
+            margin: 0; padding: 5px 8px; background: #0b1220;
+            border-top: 1px solid #1e293b; flex: 0 0 auto;
+        }
+        body.embed .row-source span { color: #94a3b8 !important; }
+        body.embed .stage {
+            border-radius: 0; aspect-ratio: auto; flex: 1; min-height: 0;
+        }
+        body.embed #camCard ~ .card { display: none; }
+        body.embed .status {
+            background: #0b1220; color: #94a3b8; border-top: 1px solid #1e293b;
+            padding: 5px 9px; font-size: 11px; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="topbar">
+        <button class="back-btn" onclick="goBack()">← Workspace</button>
+        <div class="title">Face Detection</div>
+        <div class="privacy-badge">🔒 Runs on this device</div>
+    </div>
+
+    <div class="wrap">
+        <!-- ═══════════ CAMERA / SOURCE ═══════════ -->
+        <div class="card" id="camCard">
+            <div class="card-head">📷 Source &amp; Analyse</div>
+            <div class="card-body">
+                <div class="stage">
+                    <video id="video" autoplay muted playsinline></video>
+                    <img id="stillImg" alt="loaded image" />
+                    <canvas id="overlay"></canvas>
+                    <div class="stage-hint" id="stageHint">
+                        Start the camera to begin.<br />
+                        Your browser will ask for permission first.
+                    </div>
+                </div>
+
+                <div class="row row-source">
+                    <span style="font-size:12px;font-weight:700;color:#475569;">from</span>
+                    <select id="sourceSel" onchange="onSourceChange(this.value)">
+                        <option value="camera">camera</option>
+                        <option value="image">image</option>
+                    </select>
+                    <button class="btn btn-primary" id="startBtn" onclick="toggleCamera()">Start Camera</button>
+                    <input type="file" id="imgFile" accept="image/*" style="display:none" onchange="loadStill(event)" />
+                    <button class="btn btn-ghost" id="pickBtn" onclick="document.getElementById('imgFile').click()"
+                        style="display:none">Choose image…</button>
+                </div>
+
+                <div class="row">
+                    <button class="btn btn-primary" id="analyseBtn" onclick="analyseOnce()" disabled>
+                        ▶ analyse image (once)
+                    </button>
+                    <label class="chk">
+                        <input type="checkbox" id="loopChk" onchange="toggleLoop(this.checked)" />
+                        loop at
+                    </label>
+                    <select id="fpsSel" onchange="LOOP_FPS = +this.value">
+                        <option value="10">10 fps</option>
+                        <option value="12" selected>12 fps</option>
+                        <option value="15">15 fps</option>
+                    </select>
+                    <span class="fps" id="fpsOut"></span>
+                </div>
+
+                <div class="row">
+                    <label class="chk"><input type="checkbox" id="drawBox" checked onchange="redraw()" /> boxes</label>
+                    <label class="chk"><input type="checkbox" id="drawMarks" checked onchange="redraw()" /> landmarks</label>
+                    <label class="chk"><input type="checkbox" id="drawNums" onchange="redraw()" /> landmark numbers</label>
+                    <label class="chk"><input type="checkbox" id="drawName" checked onchange="redraw()" /> matched name</label>
+                </div>
+
+                <div class="note">
+                    <b>Coordinates</b> are stage-style: <b>(0,0) is the centre</b>, x grows right,
+                    y grows up — the same convention the movement blocks use.<br />
+                    <b>Face order:</b> face 1 is the <b>left-most</b> face on screen, then rightwards.
+                    That stays stable when someone leans nearer or further away.
+                </div>
+            </div>
+            <div class="status" id="status">Loading models…</div>
+        </div>
+
+        <!-- ═══════════ DETECTION BLOCKS ═══════════ -->
+        <div class="card">
+            <div class="card-head">🔍 Detection blocks</div>
+            <div class="card-body">
+                <div class="stale" id="staleWarn">
+                    No frame analysed yet — run <b>analyse image</b> first, or tick <b>loop</b>.
+                    These blocks always read the most recent analysed frame.
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">2</span> get # faces</div>
+                    <div class="blk-val" id="v_count">0</div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">3</span> get expression of face</div>
+                    <div class="blk-ctl">
+                        face <select id="expFace" onchange="refreshReadouts()"></select>
+                    </div>
+                    <div class="blk-val" id="v_expr">—</div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">4</span> is expression of face … ?</div>
+                    <div class="blk-ctl">
+                        face <select id="isExpFace" onchange="refreshReadouts()"></select>
+                        is
+                        <select id="isExpWhich" onchange="refreshReadouts()">
+                            <option>happy</option><option>sad</option><option>angry</option>
+                            <option>surprised</option><option>neutral</option>
+                            <option>disgust</option><option>fear</option>
+                        </select>
+                    </div>
+                    <div class="blk-val" id="v_isexpr">false</div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">5</span> get position of face</div>
+                    <div class="blk-ctl">
+                        <select id="posAxis" onchange="refreshReadouts()">
+                            <option value="x">x position</option><option value="y">y position</option>
+                        </select>
+                        of face <select id="posFace" onchange="refreshReadouts()"></select>
+                    </div>
+                    <div class="blk-val" id="v_pos">0</div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">6</span> get position of face part</div>
+                    <div class="blk-ctl">
+                        <select id="partAxis" onchange="refreshReadouts()">
+                            <option value="x">x position</option><option value="y">y position</option>
+                        </select>
+                        of
+                        <select id="partWhich" onchange="refreshReadouts()">
+                            <option value="left eye">left eye</option>
+                            <option value="right eye">right eye</option>
+                            <option value="nose">nose</option>
+                            <option value="left mouth corner">left mouth corner</option>
+                            <option value="right mouth corner">right mouth corner</option>
+                            <option value="mouth centre">mouth centre</option>
+                            <option value="left eyebrow">left eyebrow</option>
+                            <option value="right eyebrow">right eyebrow</option>
+                            <option value="chin">chin</option>
+                        </select>
+                        of face <select id="partFace" onchange="refreshReadouts()"></select>
+                    </div>
+                    <div class="blk-val" id="v_part">0</div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">7</span> get position of landmark</div>
+                    <div class="blk-ctl">
+                        <select id="lmAxis" onchange="refreshReadouts()">
+                            <option value="x">x position</option><option value="y">y position</option>
+                        </select>
+                        of landmark
+                        <input type="number" id="lmIndex" min="1" max="68" value="31" style="width:64px"
+                            oninput="refreshReadouts()" />
+                        of face <select id="lmFace" onchange="refreshReadouts()"></select>
+                    </div>
+                    <div class="blk-val" id="v_lm">0</div>
+                    <div style="font-size:10px;color:#94a3b8;margin-top:5px;">
+                        1–68 (31 = nose tip). Tick “landmark numbers” to see them on the video.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ RECOGNITION BLOCKS ═══════════ -->
+        <div class="card">
+            <div class="card-head">🧑 Face recognition</div>
+            <div class="card-body">
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">8</span> add class … as … from …</div>
+                    <div class="blk-ctl">
+                        class <input type="number" id="addClassNo" min="1" max="20" value="1" style="width:56px" />
+                        as <input type="text" id="addClassName" placeholder="Jarvis" style="width:110px" />
+                    </div>
+                    <div class="row" style="margin-top:8px;">
+                        <button class="btn btn-primary" id="addBtn" onclick="addClassSample()" disabled>
+                            + Add sample
+                        </button>
+                        <span style="font-size:11px;color:#64748b;">more samples = better accuracy</span>
+                    </div>
+                    <div class="blk-val" id="v_add" style="display:none"></div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">9</span> reset class</div>
+                    <button class="btn btn-danger" onclick="resetClasses()">Delete all trained faces</button>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label">Trained classes</div>
+                    <div id="classList"><div class="val-none" style="font-size:12px;">Nothing trained yet.</div></div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">10</span> do face matching</div>
+                    <div class="row" style="margin-top:0;">
+                        <button class="btn btn-primary" id="matchBtn" onclick="doMatchingOnce()" disabled>
+                            ▶ do face matching (once)
+                        </button>
+                        <label class="chk">
+                            <input type="checkbox" id="matchLoopChk" /> match in loop
+                        </label>
+                    </div>
+                    <div class="blk-val" id="v_match">not run yet</div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">11</span> is class detected ?</div>
+                    <div class="blk-ctl">
+                        class <input type="number" id="isClassNo" min="1" max="20" value="1" style="width:56px"
+                            oninput="refreshReadouts()" /> detected?
+                    </div>
+                    <div class="blk-val" id="v_isclass">false</div>
+                </div>
+
+                <div class="blk">
+                    <div class="blk-label"><span class="blk-num">12</span> get class of face … detected</div>
+                    <div class="blk-ctl">
+                        face <select id="clsFace" onchange="refreshReadouts()"></select>
+                    </div>
+                    <div class="blk-val" id="v_class">—</div>
+                </div>
+
+                <div class="note">
+                    <b>Not a security lock.</b> This is a lightweight in-browser model meant for
+                    learning and demos. A printed photo can fool it, and lighting or camera angle
+                    change the result. Never use it as the only guard on anything that matters.<br />
+                    Expression detection is a <b>best guess</b>, not a measurement.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ══════════════════════════════════════════════════════════════
+        // FACE ENGINE
+        //
+        // Why face-api.js and not MediaPipe: this spec needs four things -
+        // detection, 68 landmarks, expression classification, and face
+        // recognition descriptors. MediaPipe ships the first two (and more
+        // landmarks), but has no expression classifier and no recognition
+        // embeddings, which is half the block list. face-api.js carries all
+        // four as trained models that map one-to-one onto the blocks.
+        // ══════════════════════════════════════════════════════════════
+
+        const MODEL_URL = 'offline_libs/face-api/model';
+
+        // Distance below which two faces are called the same person.
+        // face-api descriptors are 128-D; 0.6 is the library's own default and
+        // errs toward accepting. 0.5 is tighter and refuses more strangers,
+        // which is the safer default for a classroom demo.
+        const MATCH_THRESHOLD = 0.5;
+
+        // Expression names the model emits -> the names the blocks use.
+        const EXPR_MAP = {
+            happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised',
+            neutral: 'neutral', disgusted: 'disgust', fearful: 'fear',
+        };
+
+        let modelsReady = false;
+        let stream = null;
+        let running = false;      // camera live
+        let looping = false;      // analyse loop active
+        let LOOP_FPS = 12;
+        let loopTimer = null;
+
+        // ── Result of the most recent "analyse image" ────────────────
+        // Reader blocks NEVER touch the camera themselves; they only read
+        // this. That is what keeps "analyse image -> read" honest: if analyse
+        // has not run, analysisId stays 0 and every reader returns a safe
+        // default instead of a stale value from two seconds ago.
+        let lastResult = [];      // array of face objects, ordered left→right
+        let analysisId = 0;
+        let matchId = 0;          // bumped by "do face matching"
+        let frameW = 0, frameH = 0;
+
+        // ── Trained classes: number -> { name, descriptors: Float32Array[] }
+        let trainedClasses = {};
+        let faceMatcher = null;
+
+        const $ = id => document.getElementById(id);
+        const setStatus = m => { $('status').textContent = m; };
+
+        // ── Coordinate conversion ────────────────────────────────────
+        // Model coords are pixels from the top-left of the analysed frame.
+        // Blocks report stage coords: centre origin, y up. The preview is
+        // mirrored for a natural selfie view, so x is flipped too - otherwise
+        // a face moving right would report moving left.
+        const toStageX = px => Math.round((frameW / 2) - px);
+        const toStageY = py => Math.round((frameH / 2) - py);
+
+        // ══════════════════════════════════════════════════════════════
+        // MODEL LOADING
+        // ══════════════════════════════════════════════════════════════
+        async function loadModels() {
+            try {
+                setStatus('Loading models (first run only)…');
+                await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+                modelsReady = true;
+                setStatus('Models ready. Start the camera, then run “analyse image”.');
+            } catch (e) {
+                console.error(e);
+                setStatus('Could not load models: ' + e.message);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // SOURCE
+        // ══════════════════════════════════════════════════════════════
+        function currentSource() { return $('sourceSel').value; }
+
+        function sourceEl() {
+            return currentSource() === 'camera' ? $('video') : $('stillImg');
+        }
+
+        function onSourceChange(v) {
+            $('startBtn').style.display = v === 'camera' ? '' : 'none';
+            $('pickBtn').style.display = v === 'camera' ? 'none' : '';
+            if (v === 'image' && running) stopCamera();
+            clearResult();
+            $('video').style.display = 'none';
+            $('stillImg').style.display = v === 'image' && $('stillImg').src ? '' : 'none';
+            updateReady();
+        }
+
+        async function toggleCamera() {
+            if (running) { stopCamera(); return; }
+            // Browsers only expose getUserMedia in a secure context. Served
+            // from a plain LAN IP (http://192.168.x.x:5002) mediaDevices is
+            // simply undefined, and the raw failure is an unhelpful
+            // "cannot read properties of undefined" — say what to do instead.
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                setStatus(window.isSecureContext
+                    ? 'This browser does not expose a camera API.'
+                    : 'Camera needs https:// or localhost. Open this page via localhost or the HTTPS tunnel — a plain LAN IP will not work.');
+                return;
+            }
+            try {
+                setStatus('Requesting camera permission…');
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+                    audio: false,
+                });
+                const v = $('video');
+                v.srcObject = stream;
+                await v.play();
+                v.style.display = '';
+                $('stageHint').style.display = 'none';
+                running = true;
+                $('startBtn').textContent = 'Stop Camera';
+                $('startBtn').className = 'btn btn-danger';
+                sizeOverlay();
+                updateReady();
+                setStatus('Camera live. Run “analyse image”, or tick loop for continuous detection.');
+            } catch (e) {
+                setStatus('Camera blocked or unavailable: ' + e.message);
+            }
+        }
+
+        function stopCamera() {
+            looping = false; $('loopChk').checked = false;
+            clearInterval(loopTimer); loopTimer = null;
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            stream = null; running = false;
+            const v = $('video');
+            v.srcObject = null; v.style.display = 'none';
+            $('stageHint').style.display = '';
+            $('startBtn').textContent = 'Start Camera';
+            $('startBtn').className = 'btn btn-primary';
+            clearResult();
+            updateReady();
+            setStatus('Camera stopped.');
+        }
+
+        function loadStill(ev) {
+            const f = ev.target.files && ev.target.files[0];
+            if (!f) return;
+            const img = $('stillImg');
+            img.onload = () => {
+                img.style.display = '';
+                $('stageHint').style.display = 'none';
+                sizeOverlay();
+                updateReady();
+                setStatus('Image loaded. Run “analyse image”.');
+            };
+            img.src = URL.createObjectURL(f);
+        }
+
+        function updateReady() {
+            const ok = modelsReady && (currentSource() === 'camera' ? running : !!$('stillImg').src);
+            $('analyseBtn').disabled = !ok;
+            $('matchBtn').disabled = !ok;
+            $('addBtn').disabled = !ok;
+        }
+
+        function sizeOverlay() {
+            const el = sourceEl(), c = $('overlay');
+            const w = el.videoWidth || el.naturalWidth || 640;
+            const h = el.videoHeight || el.naturalHeight || 480;
+            frameW = w; frameH = h;
+            c.width = w; c.height = h;
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // BLOCK 1 — analyse image from [camera / image]
+        // ══════════════════════════════════════════════════════════════
+        let analysing = false;
+
+        async function analyseImage() {
+            if (!modelsReady || analysing) return lastResult;
+            const el = sourceEl();
+            if (!el || (currentSource() === 'camera' && !running)) return lastResult;
+            analysing = true;
+            try {
+                if (!frameW) sizeOverlay();
+                const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 });
+                const dets = await faceapi
+                    .detectAllFaces(el, opts)
+                    .withFaceLandmarks()
+                    .withFaceExpressions()
+                    .withFaceDescriptors();
+
+                // Left-to-right ordering, decided once here so every block
+                // agrees on what "face 1" means.
+                dets.sort((a, b) => a.detection.box.x - b.detection.box.x);
+
+                // Built defensively: a detection can arrive without landmarks
+                // or expressions, and one missing field must not throw away
+                // the whole frame — the other faces in it are still valid.
+                lastResult = dets.map(d => ({
+                    box: d.detection.box,
+                    landmarks: d.landmarks || null,
+                    points: (d.landmarks && d.landmarks.positions) || null,
+                    expressions: d.expressions || {},
+                    descriptor: d.descriptor || null,
+                    match: null,          // filled in by doFaceMatching()
+                }));
+                analysisId++;
+                return lastResult;
+            } catch (e) {
+                // Drop the previous frame rather than keep serving it. Returning
+                // stale data here would be invisible to the user and would show
+                // up as blocks reporting a face that left the frame seconds ago
+                // — worse than honestly reporting nothing.
+                console.error('[analyse]', e);
+                lastResult = [];
+                return lastResult;
+            } finally {
+                analysing = false;
+            }
+        }
+
+        function clearResult() { lastResult = []; analysisId = 0; matchId = 0; redraw(); refreshReadouts(); }
+
+        // ══════════════════════════════════════════════════════════════
+        // BLOCKS 2-7 — detection readers
+        // Every one reads lastResult only, and returns a safe default when
+        // there is no such face.
+        // ══════════════════════════════════════════════════════════════
+        function getFaceCount() { return lastResult.length; }
+
+        function faceAt(n) { return lastResult[(n | 0) - 1] || null; }   // 1-based
+
+        function getExpression(n) {
+            const f = faceAt(n);
+            if (!f) return '';
+            let best = '', score = -1;
+            for (const [k, v] of Object.entries(f.expressions)) {
+                if (v > score) { score = v; best = k; }
+            }
+            return EXPR_MAP[best] || best;
+        }
+
+        function isExpression(n, which) { return getExpression(n) === which; }
+
+        function getFacePosition(n, axis) {
+            const f = faceAt(n);
+            if (!f) return 0;
+            const cx = f.box.x + f.box.width / 2;
+            const cy = f.box.y + f.box.height / 2;
+            return axis === 'x' ? toStageX(cx) : toStageY(cy);
+        }
+
+        // Named parts, resolved from the 68-point model.
+        function partPoint(f, part) {
+            const L = f.landmarks, P = f.points;
+            if (!L || !P) return null;
+            const mean = pts => {
+                if (!pts || !pts.length) return null;
+                const s = pts.reduce((a, p) => ({ x: a.x + p.x, y: a.y + p.y }), { x: 0, y: 0 });
+                return { x: s.x / pts.length, y: s.y / pts.length };
+            };
+            switch (part) {
+                case 'left eye': return mean(L.getLeftEye());
+                case 'right eye': return mean(L.getRightEye());
+                case 'nose': return P[30];                 // nose tip
+                case 'left mouth corner': return P[48];
+                case 'right mouth corner': return P[54];
+                case 'mouth centre': return mean(L.getMouth());
+                case 'left eyebrow': return mean(L.getLeftEyeBrow());
+                case 'right eyebrow': return mean(L.getRightEyeBrow());
+                case 'chin': return P[8];
+                default: return null;
+            }
+        }
+
+        function getPartPosition(n, part, axis) {
+            const f = faceAt(n);
+            if (!f) return 0;
+            const p = partPoint(f, part);
+            if (!p) return 0;
+            return axis === 'x' ? toStageX(p.x) : toStageY(p.y);
+        }
+
+        function getLandmarkPosition(n, index, axis) {
+            const f = faceAt(n);
+            // Guard the array itself, not just the index: a detection without
+            // landmarks must return 0 like an absent face, never throw. The
+            // reader blocks are called from inside loops, and one exception
+            // there stops the whole program.
+            if (!f || !f.points) return 0;
+            const i = (index | 0) - 1;               // blocks are 1-based, array is 0-based
+            const p = f.points[i];
+            if (!p) return 0;
+            return axis === 'x' ? toStageX(p.x) : toStageY(p.y);
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // BLOCKS 8-9 — training
+        // ══════════════════════════════════════════════════════════════
+        async function addClass(classNo, name, _source) {
+            const faces = await analyseImage();
+            if (!faces.length) return { ok: false, reason: 'no face in frame' };
+            // Largest face is the subject being trained, even though blocks
+            // order left-to-right - when training you hold your face up close.
+            const subject = faces.reduce((a, b) =>
+                (b.box.width * b.box.height > a.box.width * a.box.height ? b : a));
+            const key = String(classNo | 0);
+            if (!trainedClasses[key]) trainedClasses[key] = { name: name || ('Class' + key), descriptors: [] };
+            if (name) trainedClasses[key].name = name;
+            trainedClasses[key].descriptors.push(Array.from(subject.descriptor));
+            rebuildMatcher();
+            persist();
+            return { ok: true, samples: trainedClasses[key].descriptors.length, name: trainedClasses[key].name };
+        }
+
+        function resetClass() {
+            trainedClasses = {};
+            faceMatcher = null;
+            lastResult.forEach(f => f.match = null);
+            matchId = 0;
+            persist();
+        }
+
+        function rebuildMatcher() {
+            const labelled = Object.entries(trainedClasses)
+                .filter(([, c]) => c.descriptors.length)
+                .map(([no, c]) => new faceapi.LabeledFaceDescriptors(
+                    no,                                     // label = class number
+                    c.descriptors.map(d => new Float32Array(d))
+                ));
+            faceMatcher = labelled.length
+                ? new faceapi.FaceMatcher(labelled, MATCH_THRESHOLD)
+                : null;
+        }
+
+        // Descriptors are just numbers derived on this device; keeping them in
+        // localStorage means training survives a reload without anything
+        // leaving the browser.
+        function persist() {
+            try { localStorage.setItem('curio_face_classes', JSON.stringify(trainedClasses)); } catch (e) { }
+        }
+        function restore() {
+            try {
+                const raw = localStorage.getItem('curio_face_classes');
+                if (raw) { trainedClasses = JSON.parse(raw) || {}; rebuildMatcher(); }
+            } catch (e) { trainedClasses = {}; }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // BLOCKS 10-12 — matching
+        // ══════════════════════════════════════════════════════════════
+        async function doFaceMatching(_source) {
+            const faces = await analyseImage();
+            if (!faceMatcher) { faces.forEach(f => f.match = null); matchId++; return []; }
+            faces.forEach(f => {
+                const best = faceMatcher.findBestMatch(f.descriptor);
+                f.match = (best && best.label !== 'unknown')
+                    ? { classNo: best.label, name: (trainedClasses[best.label] || {}).name || best.label, distance: best.distance }
+                    : null;
+            });
+            matchId++;
+            return faces.map(f => f.match);
+        }
+
+        function isClassDetected(classNo) {
+            if (!matchId) return false;
+            const key = String(classNo | 0);
+            return lastResult.some(f => f.match && String(f.match.classNo) === key);
+        }
+
+        function getClassOfFace(n) {
+            if (!matchId) return '';
+            const f = faceAt(n);
+            return f && f.match ? f.match.name : '';
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // UI GLUE
+        // ══════════════════════════════════════════════════════════════
+        async function analyseOnce() {
+            await analyseImage();
+            if ($('matchLoopChk').checked) await doFaceMatching();
+            redraw(); refreshReadouts();
+        }
+
+        async function doMatchingOnce() {
+            await doFaceMatching();
+            redraw(); refreshReadouts();
+        }
+
+        function toggleLoop(on) {
+            looping = on;
+            clearInterval(loopTimer); loopTimer = null;
+            if (!on) return;
+            let last = performance.now(), shown = 0;
+            loopTimer = setInterval(async () => {
+                if (!looping || analysing) return;
+                await analyseImage();
+                // Matching in the same pass, before the readers run - the
+                // ordering the spec calls out as the classic bug.
+                if ($('matchLoopChk').checked) await doFaceMatching();
+                redraw(); refreshReadouts();
+                const now = performance.now();
+                const fps = 1000 / (now - last); last = now;
+                if (++shown % 5 === 0) $('fpsOut').textContent = fps.toFixed(1) + ' fps';
+            }, Math.round(1000 / LOOP_FPS));
+        }
+
+        async function addClassSample() {
+            const no = +$('addClassNo').value || 1;
+            const name = $('addClassName').value.trim();
+            const r = await addClass(no, name, currentSource());
+            const out = $('v_add');
+            out.style.display = '';
+            out.textContent = r.ok
+                ? `added to class ${no} (“${r.name}”) — ${r.samples} sample${r.samples > 1 ? 's' : ''}`
+                : `not added — ${r.reason}`;
+            renderClasses(); redraw(); refreshReadouts();
+        }
+
+        function resetClasses() {
+            if (!Object.keys(trainedClasses).length) return;
+            if (!confirm('Delete all trained faces? This cannot be undone.')) return;
+            resetClass();
+            $('v_add').style.display = 'none';
+            renderClasses(); redraw(); refreshReadouts();
+        }
+
+        function deleteClass(no) {
+            delete trainedClasses[String(no)];
+            rebuildMatcher(); persist();
+            renderClasses(); refreshReadouts();
+        }
+
+        function renderClasses() {
+            const box = $('classList');
+            const keys = Object.keys(trainedClasses).sort((a, b) => a - b);
+            if (!keys.length) {
+                box.innerHTML = '<div class="val-none" style="font-size:12px;">Nothing trained yet.</div>';
+                return;
+            }
+            box.innerHTML = keys.map(k => `
+                <div class="cls-item">
+                    <div class="cls-dot">${k}</div>
+                    <div class="cls-name">${escapeHtml(trainedClasses[k].name)}</div>
+                    <div class="cls-count">${trainedClasses[k].descriptors.length} sample${trainedClasses[k].descriptors.length > 1 ? 's' : ''}</div>
+                    <button class="cls-del" onclick="deleteClass(${k})" title="delete">✕</button>
+                </div>`).join('');
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function syncFaceSelectors() {
+            const n = Math.max(getFaceCount(), 1);
+            ['expFace', 'isExpFace', 'posFace', 'partFace', 'lmFace', 'clsFace'].forEach(id => {
+                const sel = $(id);
+                const prev = sel.value;
+                if (sel.options.length === n) return;
+                sel.innerHTML = '';
+                for (let i = 1; i <= n; i++) {
+                    const o = document.createElement('option');
+                    o.value = i; o.textContent = i;
+                    sel.appendChild(o);
+                }
+                if (prev && +prev <= n) sel.value = prev;
+            });
+        }
+
+        function refreshReadouts() {
+            syncFaceSelectors();
+            $('staleWarn').classList.toggle('show', analysisId === 0);
+
+            const none = v => (v === '' || v === null || v === undefined);
+            const put = (id, val, cls) => {
+                const el = $(id);
+                el.textContent = none(val) ? '—' : val;
+                el.className = 'blk-val' + (none(val) ? ' val-none' : (cls || ''));
+            };
+
+            put('v_count', getFaceCount());
+
+            const e = getExpression(+$('expFace').value);
+            put('v_expr', e);
+
+            const isE = isExpression(+$('isExpFace').value, $('isExpWhich').value);
+            put('v_isexpr', String(isE), isE ? ' val-true' : ' val-false');
+
+            put('v_pos', getFacePosition(+$('posFace').value, $('posAxis').value));
+            put('v_part', getPartPosition(+$('partFace').value, $('partWhich').value, $('partAxis').value));
+            put('v_lm', getLandmarkPosition(+$('lmFace').value, +$('lmIndex').value, $('lmAxis').value));
+
+            if (!matchId) {
+                put('v_match', 'not run yet');
+            } else {
+                const names = lastResult.map((f, i) => `face ${i + 1}: ${f.match ? f.match.name : 'unknown'}`);
+                put('v_match', names.length ? names.join(' · ') : 'no faces');
+            }
+
+            const isC = isClassDetected(+$('isClassNo').value);
+            put('v_isclass', String(isC), isC ? ' val-true' : ' val-false');
+            put('v_class', getClassOfFace(+$('clsFace').value));
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // OVERLAY
+        // ══════════════════════════════════════════════════════════════
+        function redraw() {
+            const c = $('overlay');
+            if (!c.width) return;
+            const g = c.getContext('2d');
+            g.clearRect(0, 0, c.width, c.height);
+            // The preview is CSS-mirrored, so mirror the overlay too and the
+            // drawing lands on the face the viewer actually sees.
+            g.save();
+            g.translate(c.width, 0);
+            g.scale(-1, 1);
+
+            const showBox = $('drawBox').checked;
+            const showMarks = $('drawMarks').checked;
+            const showNums = $('drawNums').checked;
+            const showName = $('drawName').checked;
+
+            lastResult.forEach((f, i) => {
+                const b = f.box;
+                if (showBox) {
+                    g.strokeStyle = f.match ? '#22c55e' : '#6366f1';
+                    g.lineWidth = 3;
+                    g.strokeRect(b.x, b.y, b.width, b.height);
+                }
+                if (showMarks) {
+                    g.fillStyle = '#f59e0b';
+                    f.points.forEach(p => { g.beginPath(); g.arc(p.x, p.y, 1.7, 0, 7); g.fill(); });
+                }
+                if (showNums) {
+                    g.save(); g.translate(c.width, 0); g.scale(-1, 1);   // un-mirror text
+                    g.fillStyle = '#e2e8f0'; g.font = '9px monospace';
+                    f.points.forEach((p, k) => g.fillText(k + 1, c.width - p.x + 3, p.y));
+                    g.restore();
+                }
+                // Labels are drawn un-mirrored so they stay readable.
+                g.save(); g.translate(c.width, 0); g.scale(-1, 1);
+                const lx = c.width - b.x - b.width, ly = b.y;
+                const label = `${i + 1}: ${getExpression(i + 1) || '—'}` +
+                    (showName && f.match ? `  ✓ ${f.match.name}` : '');
+                g.font = 'bold 15px system-ui';
+                const w = g.measureText(label).width + 12;
+                g.fillStyle = f.match ? 'rgba(34,197,94,.92)' : 'rgba(99,102,241,.92)';
+                g.fillRect(lx, Math.max(0, ly - 24), w, 22);
+                g.fillStyle = '#fff';
+                g.fillText(label, lx + 6, Math.max(15, ly - 8));
+                g.restore();
+            });
+
+            g.restore();
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // NAV
+        // ══════════════════════════════════════════════════════════════
+        function goBack() {
+            stopCamera();
+            const payload = JSON.stringify({ type: 'CLOSE_FACE_DETECT' });
+            if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(payload);
+            else if (window.parent !== window) {
+                window.parent.postMessage(payload, '*');
+                window.opener?.postMessage(payload, '*');
+            } else window.location.href = 'index.html';
+        }
+
+        // Expose the twelve block actions so index.html (or any host page) can
+        // drive this page as an engine rather than only as a demo.
+        window.FaceBlocks = {
+            analyseImage, getFaceCount, getExpression, isExpression,
+            getFacePosition, getPartPosition, getLandmarkPosition,
+            addClass, resetClass, doFaceMatching, isClassDetected, getClassOfFace,
+            get analysisId() { return analysisId; },
+            get matchId() { return matchId; },
+            get classes() { return trainedClasses; },
+        };
+
+        // ══════════════════════════════════════════════════════════════
+        // RPC — lets the Blockly workspace drive this page as an engine
+        //
+        // "Test Face" in index.html mounts this page in a panel and calls the
+        // twelve block actions over postMessage. The camera and the models
+        // stay here; only names, numbers and booleans cross the boundary.
+        // ══════════════════════════════════════════════════════════════
+        // Readiness is polled, never awaited in one long call.
+        //
+        // Getting ready means loading ~8MB of models AND waiting for the user
+        // to answer a camera permission prompt — open-ended, human-paced work.
+        // Wrapping that in a single RPC meant one timeout had to cover both,
+        // and it expired while the camera was in fact coming up fine. These
+        // two calls each return immediately instead, so the caller can poll
+        // and show honest progress.
+        function getReady() {
+            return {
+                models: modelsReady,
+                camera: running,
+                source: currentSource(),
+                hasImage: !!$('stillImg').src,
+            };
+        }
+
+        // Deliberately NOT awaited: toggleCamera() blocks on the permission
+        // prompt, which can sit there for as long as the user ignores it.
+        function startCamera() {
+            if (currentSource() === 'camera' && !running) {
+                toggleCamera().catch(e => setStatus('Camera error: ' + e.message));
+            }
+            return true;
+        }
+
+        // Repainting the preview is a courtesy, not part of the answer. If the
+        // overlay or a readout throws, the block still has its value and the
+        // caller must still get it - otherwise a cosmetic failure would look
+        // to the workspace like face detection itself broke.
+        function paint() {
+            try { redraw(); refreshReadouts(); } catch (e) { console.warn('[face ui]', e); }
+        }
+
+        const RPC = {
+            ping: () => 'pong',
+            getReady,
+            startCamera,
+            analyseImage: async () => { const r = await analyseImage(); paint(); return r.length; },
+            getFaceCount,
+            getExpression,
+            isExpression,
+            getFacePosition,
+            getPartPosition,
+            getLandmarkPosition,
+            addClass: async (no, name, src) => {
+                const r = await addClass(no, name, src);
+                try { renderClasses(); } catch (e) { console.warn('[face ui]', e); }
+                paint();
+                return r;
+            },
+            resetClass: () => {
+                resetClass();
+                try { renderClasses(); } catch (e) { console.warn('[face ui]', e); }
+                paint();
+                return true;
+            },
+            doFaceMatching: async (src) => {
+                const m = await doFaceMatching(src);
+                paint();
+                // Names, not face objects: the raw result holds typed arrays
+                // and DOM-ish values that structured clone would choke on.
+                return m.map(x => (x ? x.name : ''));
+            },
+            isClassDetected,
+            getClassOfFace,
+        };
+
+        window.addEventListener('message', async (ev) => {
+            let msg = ev.data;
+            if (typeof msg === 'string') { try { msg = JSON.parse(msg); } catch { return; } }
+            if (!msg || msg.type !== 'FACE_RPC') return;
+            const reply = (ok, value, error) => {
+                try {
+                    ev.source && ev.source.postMessage(
+                        { type: 'FACE_RPC_RESULT', id: msg.id, ok, value, error }, '*');
+                } catch (e) { /* frame went away mid-call */ }
+            };
+            const fn = RPC[msg.fn];
+            if (typeof fn !== 'function') return reply(false, null, 'unknown call: ' + msg.fn);
+            try {
+                reply(true, await fn.apply(null, msg.args || []));
+            } catch (e) {
+                reply(false, null, e && e.message ? e.message : String(e));
+            }
+        });
+
+        // ── Init ────────────────────────────────────────────────────
+        // ?embed=1 → compact layout for the workspace's test panel.
+        const EMBEDDED = /[?&]embed=1/.test(location.search);
+        if (EMBEDDED) document.body.classList.add('embed');
+
+        restore();
+        renderClasses();
+        syncFaceSelectors();
+        refreshReadouts();
+        loadModels().then(updateReady);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>AI Chat Trainer — Text Understanding</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f8fafc;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: #1e293b;
+}
+
+/* ── Header ── */
+.header {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #fff; padding: 12px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); flex-shrink: 0;
+}
+.header h1 { font-size: 18px; font-weight: 700; }
+.header-badge {
+    font-size: 11px; font-weight: 700;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff; padding: 3px 10px; border-radius: 10px; margin-left: 8px;
+}
+.back-btn {
+    padding: 8px 14px; background: #f1f5f9; border: none;
+    border-radius: 8px; cursor: pointer; font-size: 13px;
+    font-weight: 600; color: #475569;
+}
+.back-btn:hover { background: #e2e8f0; }
+.use-btn {
+    padding: 8px 16px; background: #f59e0b; border: none;
+    border-radius: 8px; cursor: pointer; font-size: 13px;
+    font-weight: 700; color: #fff;
+}
+.use-btn:hover { background: #d97706; }
+
+/* ── Layout ── */
+.layout {
+    flex: 1; display: flex; gap: 16px; padding: 16px;
+    overflow: hidden; min-height: 0;
+}
+.panel {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 16px;
+    display: flex; flex-direction: column; min-height: 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+}
+.panel-left  { flex: 1 1 38%; }
+.panel-right { flex: 1 1 62%; }
+.panel-head {
+    padding: 14px 18px; border-bottom: 1px solid #f1f5f9;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; gap: 10px;
+}
+.panel-head h2 { font-size: 15px; font-weight: 800; }
+.panel-head .sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.count-pill {
+    background: #fffbeb; color: #b45309; border: 1px solid #fde68a;
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+    white-space: nowrap;
+}
+.panel-body { padding: 14px 18px; overflow-y: auto; flex: 1; min-height: 0; }
+
+/* ── Inputs ── */
+.row { display: flex; gap: 8px; }
+input[type=text] {
+    flex: 1; min-width: 0; padding: 11px 13px; font-size: 14px; font-family: inherit;
+    border: 1.5px solid #e2e8f0; border-radius: 10px; outline: none; color: #1e293b;
+}
+input[type=text]:focus { border-color: #f59e0b; }
+.add-btn, .ask-btn {
+    padding: 11px 18px; border: none; border-radius: 10px;
+    font-size: 14px; font-weight: 700; color: #fff; cursor: pointer;
+    background: #f59e0b; flex-shrink: 0;
+}
+.add-btn:hover, .ask-btn:hover { background: #d97706; }
+
+/* ── Sentence list ── */
+.slist { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.sitem {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: #f8fafc; border: 1px solid #eef2f7; border-radius: 10px;
+    padding: 9px 11px; font-size: 13px; line-height: 1.5;
+}
+.sitem .num {
+    font-size: 10px; font-weight: 800; color: #b45309; background: #fffbeb;
+    border-radius: 5px; padding: 2px 6px; flex-shrink: 0; margin-top: 1px;
+}
+.sitem .txt { flex: 1; word-break: break-word; }
+.sitem .del {
+    background: none; border: none; color: #cbd5e1; cursor: pointer;
+    font-size: 16px; line-height: 1; padding: 0 2px; flex-shrink: 0;
+}
+.sitem .del:hover { color: #ef4444; }
+
+.empty { text-align: center; color: #94a3b8; font-size: 13px; padding: 28px 10px; line-height: 1.7; }
+
+.tools { display: flex; gap: 8px; margin-top: 14px; }
+.tool-btn {
+    flex: 1; padding: 8px; font-size: 12px; font-weight: 600;
+    background: #f1f5f9; border: none; border-radius: 8px;
+    color: #475569; cursor: pointer;
+}
+.tool-btn:hover { background: #e2e8f0; }
+
+/* ── Answer card ── */
+.answer {
+    border-radius: 14px; padding: 16px 18px; margin-top: 16px;
+    border: 1.5px solid; line-height: 1.6;
+}
+.answer .lead {
+    font-size: 11px; font-weight: 800; letter-spacing: .06em;
+    text-transform: uppercase; margin-bottom: 7px;
+}
+.answer .text { font-size: 19px; font-weight: 600; word-break: break-word; line-height: 1.5; }
+.answer .text mark {
+    background: #bbf7d0; color: #14532d; font-weight: 800;
+    padding: 1px 5px; border-radius: 5px;
+}
+.answer.maybe .text mark { background: #fde68a; color: #78350f; }
+.answer .alts { margin-top: 8px; font-size: 12.5px; font-weight: 600; color: #94a3b8; }
+.answer .source {
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(15,23,42,.08);
+    font-size: 12px; font-weight: 500; color: #64748b; word-break: break-word;
+}
+.answer .source b { color: #334155; }
+
+/* ── Smart mode ── */
+.smartbar {
+    display: flex; align-items: center; gap: 11px;
+    padding: 11px 14px; margin-top: 12px;
+    background: #f8fafc; border: 1px solid #eef2f7; border-radius: 12px;
+}
+.switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; inset: 0; cursor: pointer;
+    background: #cbd5e1; border-radius: 24px; transition: background .2s;
+}
+.slider:before {
+    content: ''; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform .2s;
+}
+.switch input:checked + .slider { background: #6366f1; }
+.switch input:checked + .slider:before { transform: translateX(18px); }
+.switch input:disabled + .slider { opacity: .5; cursor: wait; }
+.smartbar .lbl { flex: 1; min-width: 0; }
+.smartbar .lbl b { font-size: 12.5px; font-weight: 700; color: #334155; }
+.smartbar .lbl div { font-size: 11px; color: #94a3b8; margin-top: 2px; line-height: 1.5; }
+.smartbar.err { background: #fef2f2; border-color: #fecaca; }
+.smartbar.err .lbl div { color: #b91c1c; }
+
+.mode-tag.smart { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+.mode-tag.gen   { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+
+.switch.violet input:checked + .slider { background: #8b5cf6; }
+
+/* ── Generated answer ── */
+.gencard {
+    margin-top: 16px; padding: 16px 18px; border-radius: 14px;
+    background: linear-gradient(135deg, #faf5ff, #fff);
+    border: 1.5px solid #ddd6fe;
+}
+.genhead {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 11px; font-weight: 800; letter-spacing: .06em;
+    text-transform: uppercase; color: #6d28d9; margin-bottom: 8px;
+}
+.genbadge {
+    text-transform: none; letter-spacing: 0; font-size: 10px;
+    background: #ede9fe; border: 1px solid #ddd6fe; color: #6d28d9;
+    padding: 2px 8px; border-radius: 20px;
+}
+.gentext { font-size: 19px; font-weight: 600; color: #2e1065; line-height: 1.5; word-break: break-word; }
+.gentext.waiting { color: #a78bfa; font-weight: 500; font-size: 15px; }
+.gennote {
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(109,40,217,.12);
+    font-size: 11px; color: #7c6aa8; line-height: 1.6;
+}
+.gencard.err { background: #fef2f2; border-color: #fecaca; }
+.gencard.err .genhead, .gencard.err .gentext { color: #b91c1c; }
+.gencard.warn { background: linear-gradient(135deg, #fffbeb, #fff); border-color: #fcd34d; }
+.gencard.warn .genhead { color: #b45309; }
+.gencard.warn .gentext { color: #78350f; }
+.gencard.warn .gennote { color: #92400e; border-top-color: rgba(180,83,9,.16); }
+
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+.gentext.waiting { animation: pulse 1.3s ease-in-out infinite; }
+
+/* ── Keyword vs Meaning comparison ── */
+.cmp { display: flex; gap: 10px; }
+.cmpcol {
+    flex: 1; min-width: 0; padding: 11px 13px; border-radius: 11px;
+    background: #f8fafc; border: 1.5px solid #eef2f7;
+}
+.cmpcol.win { background: #f5f3ff; border-color: #c7d2fe; }
+.cmphead {
+    font-size: 10.5px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .04em; color: #94a3b8; margin-bottom: 6px;
+}
+.cmpcol.win .cmphead { color: #4338ca; }
+.cmpscore { font-size: 19px; font-weight: 800; color: #334155; line-height: 1.1; }
+.cmptext { font-size: 11.5px; color: #64748b; margin-top: 5px; line-height: 1.5; word-break: break-word; }
+@media (max-width: 560px) { .cmp { flex-direction: column; } }
+.answer.sure    { background: #f0fdf4; border-color: #86efac; }
+.answer.sure .lead { color: #16a34a; }
+.answer.maybe   { background: #fffbeb; border-color: #fde68a; }
+.answer.maybe .lead { color: #b45309; }
+.answer.unknown { background: #f8fafc; border-color: #e2e8f0; }
+.answer.unknown .lead { color: #64748b; }
+
+.confbar { margin-top: 12px; }
+.confbar .label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px;
+}
+.track { height: 8px; background: #e2e8f0; border-radius: 6px; overflow: hidden; }
+.fill { height: 100%; border-radius: 6px; transition: width .3s ease; }
+.fill.sure { background: #16a34a; }
+.fill.maybe { background: #f59e0b; }
+.fill.unknown { background: #94a3b8; }
+
+/* ── Explain ── */
+.explain { margin-top: 18px; }
+.explain h3 {
+    font-size: 12px; font-weight: 800; color: #475569;
+    text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+}
+.words { display: flex; flex-wrap: wrap; gap: 6px; }
+.word {
+    font-size: 12px; padding: 5px 10px; border-radius: 8px;
+    border: 1px solid; font-weight: 600; display: flex; align-items: center; gap: 6px;
+}
+.word .w { font-size: 10px; font-weight: 800; opacity: .75; }
+.word.hit     { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+.word.known   { background: #f1f5f9; border-color: #e2e8f0; color: #64748b; }
+.word.common  { background: #f8fafc; border-color: #eef2f7; color: #94a3b8; }
+.word.unknown { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+
+.legend { font-size: 11px; color: #94a3b8; margin-top: 9px; line-height: 1.8; }
+
+/* ── Ranked sentences ── */
+.rank { display: flex; flex-direction: column; gap: 7px; }
+.rrow {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; padding: 7px 10px; border-radius: 9px;
+    background: #f8fafc; border: 1px solid #eef2f7;
+}
+.rrow.win { background: #f0fdf4; border-color: #86efac; }
+.rrow .score { font-size: 11px; font-weight: 800; width: 34px; flex-shrink: 0; color: #475569; }
+.rrow .bartrack {
+    width: 76px; height: 6px; background: #e2e8f0;
+    border-radius: 4px; overflow: hidden; flex-shrink: 0;
+}
+.rrow .bar { height: 100%; background: #cbd5e1; border-radius: 4px; }
+.rrow.win .bar { background: #16a34a; }
+.rrow .st { flex: 1; color: #475569; line-height: 1.5; word-break: break-word; }
+
+/* ── Threshold ── */
+.thresh {
+    margin-top: 18px; padding: 13px 15px; background: #f8fafc;
+    border: 1px solid #eef2f7; border-radius: 12px;
+}
+.thresh .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.thresh label { font-size: 12px; font-weight: 700; color: #475569; }
+.thresh .val { font-size: 12px; font-weight: 800; color: #b45309; }
+.thresh input[type=range] { width: 100%; accent-color: #f59e0b; }
+.thresh .note { font-size: 11px; color: #94a3b8; margin-top: 7px; line-height: 1.6; }
+
+.mode-tag {
+    display: inline-block; font-size: 10px; font-weight: 800; padding: 3px 8px;
+    border-radius: 6px; background: #eef2ff; color: #4338ca;
+    border: 1px solid #c7d2fe; white-space: nowrap;
+}
+
+/* Toast */
+.toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #1e293b; color: #fff; padding: 11px 20px; border-radius: 10px;
+    font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none;
+    transition: opacity .25s; z-index: 99; max-width: 90%; text-align: center;
+}
+.toast.show { opacity: 1; }
+
+/* ── Embedded mode (chat.html?embed=1) ──────────────────────────────
+   Driven by the workspace's Chat test panel over RPC. Nothing is meant
+   to be looked at, so the whole trainer UI collapses to a status line. */
+body.embed .layout, body.embed .header { display: none !important; }
+body.embed { background: #0f172a; }
+body.embed::after {
+    content: 'AI Chat engine ready';
+    display: block; padding: 10px 14px;
+    color: #94a3b8; font-size: 12px; font-family: system-ui, sans-serif;
+}
+
+@media (max-width: 860px) {
+    .layout { flex-direction: column; overflow-y: auto; }
+    .panel-left, .panel-right { flex: none; }
+    .panel-left .panel-body { max-height: 240px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+    <button class="back-btn" onclick="goBack()">← Workspace</button>
+    <h1>AI Chat Trainer <span class="header-badge">💬 Text AI</span></h1>
+    <button class="use-btn" onclick="goBack()">✓ Done — back to Blocks</button>
+</div>
+
+<div class="layout">
+
+    <!-- ── LEFT: dataset ── -->
+    <div class="panel panel-left">
+        <div class="panel-head">
+            <div>
+                <h2>📚 Teach the AI</h2>
+                <div class="sub">Saved automatically — your blocks can use these</div>
+            </div>
+            <span class="count-pill" id="countPill">0 sentences</span>
+        </div>
+        <div class="panel-body">
+            <div class="row">
+                <input type="text" id="sentenceInput" placeholder="e.g. Plants make food using sunlight"/>
+                <button class="add-btn" onclick="addSentence()">Add</button>
+            </div>
+            <div class="slist" id="slist"></div>
+            <div class="tools">
+                <button class="tool-btn" onclick="loadExample()">Load Example</button>
+                <button class="tool-btn" onclick="clearAll()">Clear All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── RIGHT: ask ── -->
+    <div class="panel panel-right">
+        <div class="panel-head">
+            <div>
+                <h2>🤔 Ask a Question</h2>
+                <div class="sub">See which sentence the AI picks — and why</div>
+            </div>
+            <span class="mode-tag" id="modeTag">TF-IDF</span>
+        </div>
+        <div class="panel-body">
+            <div class="row">
+                <input type="text" id="questionInput" placeholder="e.g. how do plants get food?"/>
+                <button class="ask-btn" id="askBtn" onclick="ask()">Ask</button>
+            </div>
+
+            <div class="smartbar" id="smartbar">
+                <label class="switch">
+                    <input type="checkbox" id="smartToggle"/>
+                    <span class="slider"></span>
+                </label>
+                <div class="lbl">
+                    <b>🧠 Smart mode — understand meaning</b>
+                    <div id="smartNote">
+                        Off: matches words only. On: also matches meaning, so
+                        "motorcycle" can find "bike". Downloads a language model
+                        (28 MB, needs internet, once per session).
+                    </div>
+                </div>
+            </div>
+
+            <div class="smartbar" id="genbar">
+                <label class="switch violet">
+                    <input type="checkbox" id="genToggle"/>
+                    <span class="slider"></span>
+                </label>
+                <div class="lbl">
+                    <b>✍️ Write mode — the AI writes its own sentence</b>
+                    <div id="genNote">
+                        Finds the right sentence, then a language model writes a new
+                        answer from it — a sentence that is not in your dataset.
+                        (Flan-T5, 262 MB, needs internet.)
+                    </div>
+                </div>
+            </div>
+
+            <div id="result"></div>
+
+            <div class="thresh">
+                <div class="top">
+                    <label for="thresh">Don't answer below</label>
+                    <span class="val" id="threshVal">30%</span>
+                </div>
+                <input type="range" id="thresh" min="0" max="90" value="30" step="5"/>
+                <div class="note">
+                    Below this score the AI says <b>"I don't know"</b> instead of guessing.
+                    Drag it to 0% and ask something silly — you will see why this matters.
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * AI Chat Trainer — TF-IDF + cosine similarity, plain JS, no libraries.
+ *
+ * The student types sentences (the dataset) and asks a question. We find the
+ * sentence that best answers it, and — just as importantly — SHOW WHY.
+ *
+ * Deliberately dependency-free so it works offline like the rest of the
+ * offline_libs/ stack. See the discussion in the project notes.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+const STORE_KEY = 'curio_chat_dataset_v1';
+
+/* Below this many sentences, IDF is statistically meaningless — the weights
+ * would be noise. Fall back to plain word overlap until the dataset grows. */
+const MIN_FOR_TFIDF = 5;
+
+/* Above this: "I think the answer is". Measured against the example dataset,
+ * clearly-correct matches land between 0.50 and 0.82, so 0.60 was too strict —
+ * it made good answers read as hesitant. */
+const SURE_THRESHOLD = 0.45;
+
+const EXAMPLE = [
+    'The sun gives light and heat to the earth',
+    'Plants make their own food using sunlight',
+    'The moon reflects light at night',
+    'Water boils at one hundred degrees celsius',
+    'Ice melts when it gets warm',
+    'Birds have feathers and most of them can fly',
+    'The heart pumps blood around the body',
+    'Roots take water from the soil'
+];
+
+let sentences = [];
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 1. TEXT PROCESSING
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/* Strip punctuation by blacklist rather than whitelisting A-Z. A whitelist
+ * would silently delete Hindi, Tamil and every other non-Latin script — this
+ * way those tokenize on whitespace and still work. */
+const PUNCT = /[.,!?;:"'`´()\[\]{}<>\/\\|@#$%^&*_+=~–—-]/g;
+
+/* Porter-lite stemmer. Not linguistically perfect, but it makes
+ * "plants"/"plant" and "running"/"run" match, which is most of the win. */
+function isCVC(w) {
+    if (w.length < 3) return false;
+    const v = c => 'aeiou'.indexOf(c) >= 0;
+    const a = w[w.length - 3], b = w[w.length - 2], c = w[w.length - 1];
+    return !v(a) && v(b) && !v(c) && 'wxy'.indexOf(c) < 0;
+}
+
+function fixStem(w) {
+    // Applied after removing -ing / -ed. Order matters: the doubled-consonant
+    // branch must win over the add-an-e branch, or "hopping" becomes "hope".
+    if (!/[aeiouy]/.test(w)) return w;
+    if (/([bdfglmnprt])\1$/.test(w)) return w.slice(0, -1);   // hopp -> hop
+    if (/(at|bl|iz)$/.test(w)) return w + 'e';                // creat -> create
+    if (isCVC(w)) return w + 'e';                             // mak -> make
+    return w;
+}
+
+function stem(w) {
+    if (w.length <= 3) return w;
+
+    // plurals
+    if (/sses$/.test(w))            w = w.slice(0, -2);
+    else if (/ies$/.test(w))        w = w.slice(0, -2);       // bodies -> bodi
+    else if (/ss$/.test(w))         { /* keep */ }
+    else if (/s$/.test(w))          w = w.slice(0, -1);
+
+    // y -> i so "body" meets "bodies"
+    if (w.length > 3 && /[^aeiou]y$/.test(w)) w = w.slice(0, -1) + 'i';
+
+    if (w.length <= 3) return w;
+
+    if (/ing$/.test(w) && w.length > 5)      w = fixStem(w.slice(0, -3));
+    else if (/ed$/.test(w) && w.length > 4)  w = fixStem(w.slice(0, -2));
+
+    return w;
+}
+
+function tokenize(text) {
+    return String(text || '')
+        .toLowerCase()
+        .replace(PUNCT, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(stem);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 2. THE INDEX  —  document frequency, IDF, normalised TF-IDF vectors
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+function buildIndex(list) {
+    const docs = list.map(text => {
+        const tokens = tokenize(text);
+        const tf = new Map();
+        tokens.forEach(t => tf.set(t, (tf.get(t) || 0) + 1));
+        return { text, tokens, tf, set: new Set(tokens), vec: new Map() };
+    });
+
+    const N = docs.length;
+
+    // df = in how many sentences does this word appear at all
+    const df = new Map();
+    docs.forEach(d => d.set.forEach(t => df.set(t, (df.get(t) || 0) + 1)));
+
+    //            1 + N
+    // idf = ln ───────── + 1     common word -> low weight, rare word -> high
+    //            1 + df
+    const idf = new Map();
+    df.forEach((count, t) => idf.set(t, Math.log((1 + N) / (1 + count)) + 1));
+
+    // tf * idf, then scale each vector to length 1 so cosine == dot product
+    docs.forEach(d => {
+        let sq = 0;
+        d.tf.forEach((count, t) => {
+            const w = count * idf.get(t);
+            d.vec.set(t, w);
+            sq += w * w;
+        });
+        const norm = Math.sqrt(sq) || 1;
+        d.vec.forEach((w, t) => d.vec.set(t, w / norm));
+    });
+
+    return { docs, N, df, idf };
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 3. SCORING
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+function search(index, question) {
+    const qTokens = tokenize(question);
+    if (!qTokens.length || !index.N) {
+        return { results: [], qTokens: [], mode: 'none' };
+    }
+
+    // ── Too few sentences for IDF to mean anything: binary cosine instead.
+    if (index.N < MIN_FOR_TFIDF) {
+        const qSet = new Set(qTokens);
+        const results = index.docs.map((doc, i) => {
+            let shared = 0;
+            qSet.forEach(t => { if (doc.set.has(t)) shared++; });
+            const score = shared / (Math.sqrt(qSet.size * doc.set.size) || 1);
+            return { i, doc, score };
+        });
+        results.sort((a, b) => b.score - a.score);
+        return { results, qTokens, mode: 'overlap', qWeights: new Map() };
+    }
+
+    // ── Normal path: TF-IDF + cosine.
+    const qtf = new Map();
+    qTokens.forEach(t => qtf.set(t, (qtf.get(t) || 0) + 1));
+
+    const qVec = new Map();
+    let sq = 0;
+    qtf.forEach((count, t) => {
+        // A word that appears in no sentence has no vector dimension to live
+        // in — it contributes nothing to any score, so drop it.
+        if (!index.idf.has(t)) return;
+        const w = count * index.idf.get(t);
+        qVec.set(t, w);
+        sq += w * w;
+    });
+    const norm = Math.sqrt(sq) || 1;
+    qVec.forEach((w, t) => qVec.set(t, w / norm));
+
+    const results = index.docs.map((doc, i) => {
+        let score = 0;
+        qVec.forEach((w, t) => { if (doc.vec.has(t)) score += w * doc.vec.get(t); });
+        return { i, doc, score };
+    });
+    results.sort((a, b) => b.score - a.score);
+
+    // qVec travels with the result so the cosine can be shown term by term
+    // later — recomputing it would risk drifting from what actually scored.
+    return { results, qTokens, mode: 'tfidf', qWeights: index.idf, qVec: qVec };
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 4. TURNING A MATCH INTO A SENTENCE
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/* Extraction needs a stopword list even though ranking does not. IDF already
+ * learns which words are unimportant for SCORING — but to pull the answer OUT
+ * of a sentence we have to drop the glue words the question never mentioned. */
+const STOPWORDS = new Set((
+    'a an the this that these those there here ' +
+    'i me my mine we us our you your he him his she her hers it its they them their ' +
+    'is am are was were be been being get gets got ' +
+    'do does did doing done have has had having ' +
+    'of in on at to from with without for by as about around into near over under off up ' +
+    'and or but if then than so because while when ' +
+    'what where who whom whose which why how ' +
+    'not no yes can could will would shall should may might must ' +
+    'tell say me please name called ' +
+    // quantifiers and fillers — "all" missing here is what produced "fly all"
+    'all both each every some any few more most much many other others own same ' +
+    'such only very just too also even still well back way there'
+).split(' '));
+
+/* THE ANSWER IS WHAT IS LEFT OVER.
+ *
+ *   sentence   i  am  arun  from  cuddalore
+ *   question           ✗     ✗                 already said by the student
+ *   stopwords  ✗   ✗                           glue
+ *   leftover                      cuddalore  ← the answer
+ *
+ * We take the SPAN from the first surviving word to the last, glue included.
+ * Dropping the glue instead shatters real phrases — "birds can fly all over
+ * the world" asked about "birds" became "fly all", because "over" and "the"
+ * split the run in two.
+ *
+ * A span that runs long is usually a sentence with several unrelated content
+ * words rather than one answer, so past MAX_SPAN we fall back to the first
+ * group alone ("Birds have feathers and most of them can fly" -> "feathers"). */
+const MAX_SPAN = 6;
+
+function extractAnswer(doc, qStems) {
+    const raw = doc.text.replace(PUNCT, ' ').split(/\s+/).filter(Boolean);
+    if (raw.length < 2) return null;
+
+    const keep = raw.map(w => {
+        const lower = w.toLowerCase();
+        return !qStems.has(stem(lower)) && !STOPWORDS.has(lower);
+    });
+
+    const first = keep.indexOf(true);
+    if (first === -1) return null;
+    const last = keep.lastIndexOf(true);
+
+    let start = first, end = last;
+    if (last - first + 1 > MAX_SPAN) {
+        // too wide to be one answer — keep only the first contiguous group
+        end = first;
+        while (end + 1 < raw.length && keep[end + 1]) end++;
+    }
+
+    // Nothing was actually removed — that is not an extraction, just the sentence.
+    if (end - start + 1 === raw.length) return null;
+
+    const out = raw.slice(start, end + 1).join(' ');
+    return {
+        answer: out.charAt(0).toUpperCase() + out.slice(1),
+        words: raw,        // so the UI can rebuild the sentence…
+        start: start,      // …with the answer highlighted in place
+        end: end
+    };
+}
+
+/* The full sentence with the extracted answer marked inside it — so the
+ * student gets the short answer AND the context it came from. */
+function highlighted(short, escape) {
+    return short.words.map((w, i) => {
+        // Applied as two independent tests, so a one-word answer where
+        // start === end still gets both an opening and a closing tag.
+        let out = escape(w);
+        if (i === short.start) out = '<mark>' + out;
+        if (i === short.end)   out = out + '</mark>';
+        return out;
+    }).join(' ');
+}
+
+function phrase(best, floor, qStems) {
+    if (!best || best.score < floor) {
+        return { tier: 'unknown', lead: 'No answer found', short: null, mark: null,
+                 text: "I don't know that yet. Teach me — add a sentence about it!" };
+    }
+    const short = extractAnswer(best.doc, qStems || new Set());
+    const sure  = best.score >= SURE_THRESHOLD;
+    return {
+        tier: sure ? 'sure' : 'maybe',
+        lead: sure ? 'I think the answer is' : 'I am not sure, but maybe',
+        text: best.doc.text,                       // always the full sentence
+        short: short ? short.answer : null,        // the extracted bit
+        mark: short || null                        // highlight positions
+    };
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 4b. SMART MODE  —  sentence embeddings (Universal Sentence Encoder)
+ *
+ * TF-IDF can only match words that are literally shared. "What powers a
+ * motorcycle?" and "bike run with help of petrol" have nothing in common on
+ * the page, so keyword matching scores 0.00. An embedding turns each sentence
+ * into 512 numbers that describe its MEANING, so those two land near each
+ * other even with no shared letters.
+ *
+ * The cost is that it stops being explainable — you cannot show a child why
+ * two sentences are 0.8 apart in 512 dimensions. So this is additive: TF-IDF
+ * always runs, embeddings only refine it, and both scores are shown.
+ *
+ * Loaded lazily, on toggle, so the page stays fully offline until asked.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+const TFJS_URL = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js';
+const USE_URL  = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder@1.3.3/dist/universal-sentence-encoder.min.js';
+
+/* USE similarity does not use the full 0..1 range — two unrelated English
+ * sentences still score around 0.25, and a strong match rarely passes 0.85.
+ * Stretching that window keeps the confidence slider meaningful across both
+ * modes. These are eyeballed defaults; worth re-tuning against real classroom
+ * questions once there are some. */
+const EMB_FLOOR = 0.25;
+const EMB_CEIL  = 0.85;
+
+/* CHOOSING BETWEEN KEYWORDS AND MEANING
+ *
+ * Two attempts failed before this one:
+ *
+ *   fixed 60% blend  "new delhi"    keyword right 0.61, meaning wrong 0.56
+ *                                   -> blend handed it to the wrong sentence
+ *   max()            "bike petrol"  keyword right 0.56, meaning wrong 0.69
+ *                                   -> the confidently-wrong method won
+ *
+ * Neither score alone tells you which method to believe. What does is
+ * COVERAGE: how many of the question's words actually appear, together, in
+ * one sentence.
+ *
+ *   "bike petrol"  -> bike ✓ petrol ✓  both in one sentence  -> trust keywords
+ *   "what powers a motorcycle"        nothing matches        -> trust meaning
+ *
+ * Two or more of the student's words landing in the same sentence is strong,
+ * direct evidence; embeddings only earn the decision when the words fail.
+ * One matched word is not enough — "name the indian capital city" matches
+ * "city" against "chennai is the city" and would pick the wrong one. */
+const COVER_MIN_WORDS = 2;      // at least this many query words must land
+const COVER_MIN_RATIO = 0.6;    // …and that must be most of the usable words
+
+function keywordCoverage(index, qStems) {
+    const usable = [];
+    // Stopwords are excluded: "the" appearing in both the question and a
+    // sentence is not evidence of anything. Counting it made "name the indian
+    // capital city" look like a 2-word match against "chennai is the city".
+    qStems.forEach(t => {
+        if (index.idf.has(t) && !STOPWORDS.has(t)) usable.push(t);
+    });
+    if (!usable.length) return { matched: 0, ratio: 0, trust: false };
+
+    let matched = 0;
+    index.docs.forEach(d => {
+        let n = 0;
+        usable.forEach(t => { if (d.set.has(t)) n++; });
+        if (n > matched) matched = n;
+    });
+    const ratio = matched / usable.length;
+    return {
+        matched: matched,
+        ratio: ratio,
+        trust: matched >= COVER_MIN_WORDS && ratio >= COVER_MIN_RATIO
+    };
+}
+
+let useModel = null;
+let smartOn = false;
+const embedCache = new Map();   // sentence text -> normalised Float32Array
+
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Could not load ' + src));
+        document.head.appendChild(s);
+    });
+}
+
+function l2(vec) {
+    let sum = 0;
+    for (let i = 0; i < vec.length; i++) sum += vec[i] * vec[i];
+    const norm = Math.sqrt(sum) || 1;
+    const out = new Float32Array(vec.length);
+    for (let i = 0; i < vec.length; i++) out[i] = vec[i] / norm;
+    return out;
+}
+
+function dot(a, b) {
+    let sum = 0;
+    for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
+    return sum;
+}
+
+/* Both vectors are unit length, so the dot product IS the cosine. */
+function embedSimilarity(a, b) {
+    return Math.max(0, Math.min(1, (dot(a, b) - EMB_FLOOR) / (EMB_CEIL - EMB_FLOOR)));
+}
+
+async function loadSmartModel() {
+    if (useModel) return useModel;
+    if (typeof tf === 'undefined') await loadScript(TFJS_URL);
+    if (typeof use === 'undefined') await loadScript(USE_URL);
+    useModel = await use.load();
+    return useModel;
+}
+
+/* Cached per sentence, so adding one sentence does not re-embed the rest. */
+async function embedTexts(texts) {
+    const missing = texts.filter(t => !embedCache.has(t));
+    if (missing.length) {
+        const tensor = await useModel.embed(missing);
+        const rows = await tensor.array();
+        tensor.dispose();
+        missing.forEach((t, i) => embedCache.set(t, l2(rows[i])));
+    }
+    return texts.map(t => embedCache.get(t));
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 4c. WRITE MODE  —  a small language model that generates the answer
+ *
+ * Levels 1 and 2 can only ever hand back a sentence the student typed. This
+ * one writes a new one:
+ *
+ *     dataset:  "i am arun from cuddalore"
+ *     question: "who is arun?"
+ *     output:   "Arun is from Cuddalore."      <- nowhere in the dataset
+ *
+ * The shape is RAG, which is how assistants answer questions about an
+ * uploaded document: RETRIEVE the relevant text with the search we already
+ * built, then let the model write from it. The retrieval is what keeps it
+ * honest — when nothing is retrieved we refuse to generate, because a
+ * language model with no context will happily invent an answer.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+/* Generator. Measured download sizes, quantized encoder + decoder:
+ *
+ *   Xenova/LaMini-Flan-T5-77M     91 MB   echoes, tautologies
+ *   Xenova/LaMini-Flan-T5-248M   262 MB   the practical best   <- in use
+ *   Xenova/LaMini-Flan-T5-783M   785 MB   too heavy for a WebView
+ *
+ * Swap the two lines below to move between them; nothing else changes. */
+const GEN_MODEL = 'Xenova/LaMini-Flan-T5-248M';
+const GEN_MODEL_MB = 262;
+/* How many retrieved sentences the model is allowed to read.
+ *
+ * Kept at 1 on purpose. Fed three, the model blended two of them and wrote
+ * "The captial of India is the city." — half of one sentence welded to half of
+ * another. With single-fact sentences there is nothing to gain from extra
+ * context and a lot to lose. It also means the sentence highlighted on screen
+ * is exactly what the model read, which is the honest thing to show.
+ *
+ * Raise it if sentences ever need combining to answer. */
+const GEN_CONTEXT_N = 1;
+
+let genPipe = null;
+let genOn = false;
+
+async function loadGenModel(onProgress) {
+    if (genPipe) return genPipe;
+    // ES module, so it cannot come in through a plain script tag like TF.js did.
+    const lib = await import(TRANSFORMERS_URL);
+    lib.env.allowLocalModels = false;          // always fetch from the Hub
+    genPipe = await lib.pipeline('text2text-generation', GEN_MODEL, {
+        quantized: true,
+        progress_callback: onProgress
+    });
+    return genPipe;
+}
+
+/* Students type keywords, not questions — "new delhi" rather than "what is
+ * new delhi". Handed a bare noun under a "Question:" heading the model has
+ * nothing to answer and starts echoing, which is how it produced the
+ * tautology "The captial of India is the capital of India."
+ *
+ * Retrieval is unaffected; this shaping is only for the model's prompt. */
+const WH = /\b(what|where|who|whom|whose|which|when|why|how|is|are|was|were|do|does|did|can|should|tell)\b/i;
+
+function asQuestion(q) {
+    const t = q.trim().replace(/\?+$/, '');
+    if (!t) return t;
+    return WH.test(t) ? t + '?' : 'What is ' + t + '?';
+}
+
+/* The model repeats whatever noun the prompt uses for the context — calling it
+ * a "Passage" produced "The passage states that bike is in the workshop."
+ * So the context is given a bare heading, and anything that still leaks
+ * through is trimmed off the front of the answer. */
+const LEAKS = [
+    /^(?:the|this)?\s*(?:passage|text|context|information|document|sentence)\s+(?:above\s+)?(?:states?|says?|tells?\s+us|mentions?|indicates?)\s+that\s+/i,
+    /^according\s+to\s+(?:the\s+)?(?:passage|text|context|information|document|sentence)\s*,?\s*/i,
+    /^(?:answer|a)\s*:\s*/i
+];
+
+function tidy(text) {
+    let out = String(text || '').trim();
+    LEAKS.forEach(re => { out = out.replace(re, ''); });
+    out = out.trim();
+    if (!out) return out;
+    out = out.charAt(0).toUpperCase() + out.slice(1);
+    if (!/[.!?]$/.test(out)) out += '.';
+    return out;
+}
+
+/* HALLUCINATION CHECK
+ *
+ * Given "bike in the workshop" and asked about bike petrol, the model wrote
+ * "Bike petrol is a type of motorcycle that is powered by gasoline." — fluent,
+ * plausible, and four of its six content words appear nowhere in the dataset.
+ * That is the failure mode people mean by hallucination, and a language model
+ * cannot tell you it is happening.
+ *
+ * We can: count how much of the answer actually came from the text it read.
+ * Anything it invented is, by definition, not in the context or the question. */
+const GROUNDED_MIN = 0.6;
+
+function groundedness(answer, contextSentences, question) {
+    const known = new Set();
+    contextSentences.concat([question]).forEach(s =>
+        tokenize(s).forEach(t => known.add(t)));
+
+    // Keep the word the model actually wrote alongside its stem, so the
+    // warning can say "gasoline" rather than the stem "gasolin".
+    const raw = String(answer || '').toLowerCase().replace(PUNCT, ' ')
+                    .split(/\s+/).filter(Boolean);
+    const stems = tokenize(answer);
+
+    const content = [];
+    stems.forEach((t, i) => {
+        if (!STOPWORDS.has(t) && !STOPWORDS.has(raw[i] || '')) {
+            content.push({ stem: t, word: raw[i] || t });
+        }
+    });
+    if (!content.length) return { ratio: 1, invented: [] };
+
+    const invented = content.filter(c => !known.has(c.stem));
+    return {
+        ratio: (content.length - invented.length) / content.length,
+        invented: [...new Set(invented.map(c => c.word))]
+    };
+}
+
+async function generateAnswer(question, contextSentences) {
+    const prompt =
+        contextSentences.join(' ') + '\n\n' +
+        'Question: ' + asQuestion(question) + '\n' +
+        'Answer in one complete sentence:';
+
+    const out = await genPipe(prompt, {
+        max_new_tokens: 48,
+        do_sample: false          // deterministic: same question, same answer
+    });
+    return tidy((out && out[0] && out[0].generated_text) || '');
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 4d. THE QUERY CORE  —  no DOM, returns plain data
+ *
+ * Both callers go through here: the trainer UI below, and the Blockly blocks
+ * over RPC. One code path, so the blocks can never drift from what the
+ * student saw while training.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+async function answerQuery(question, opts) {
+    const o = opts || {};
+    const list = o.sentences || sentences;
+    const floor = typeof o.floor === 'number' ? o.floor : 0.3;
+
+    const empty = {
+        question: question, found: false, confidence: 0,
+        answer: '', short: '', sentence: '', lead: 'No answer found',
+        tier: 'unknown', method: 'keyword', generated: '', grounded: 1,
+        invented: [], keywordTop: null, meaningTop: null, cover: null,
+        index: null, ranked: [], qStems: new Set(), qTokens: [], said: null
+    };
+    if (!list.length || !question) return empty;
+
+    const index = buildIndex(list);
+    const found = search(index, question);
+    const qStems = new Set(found.qTokens);
+
+    const keyword = found.results.slice();
+    const keywordTop = keyword[0] || null;
+
+    let ranked = keyword, meaningTop = null, method = 'keyword', cover = null;
+
+    if (o.useMeaning && useModel) {
+        const vecs = await embedTexts(list.concat([question]));
+        const qv = vecs[vecs.length - 1];
+        const meaning = index.docs.map((doc, i) => ({
+            i: i, doc: doc, score: embedSimilarity(qv, vecs[i])
+        }));
+        meaningTop = meaning.slice().sort((a, b) => b.score - a.score)[0];
+        cover = keywordCoverage(index, qStems);
+        method = cover.trust ? 'keyword' : 'meaning';
+        ranked = cover.trust ? keyword : meaning.slice().sort((a, b) => b.score - a.score);
+    }
+
+    const best = ranked[0] || null;
+    const said = phrase(best, floor, qStems);
+    const isFound = !!(best && best.score >= floor);
+
+    const res = {
+        question: question,
+        found: isFound,
+        confidence: best ? Math.round(best.score * 100) : 0,
+        answer: said.text,
+        short: said.short || '',
+        sentence: isFound ? best.doc.text : '',
+        lead: said.lead,
+        tier: said.tier,
+        method: method,
+        generated: '', grounded: 1, invented: [],
+        keywordTop: keywordTop, meaningTop: meaningTop, cover: cover,
+        index: index, ranked: ranked, qStems: qStems,
+        qTokens: found.qTokens || [],      // explain() walks these in order
+        qVec: found.qVec || null,          // for the cosine breakdown
+        said: said
+    };
+
+    // Write mode: only ever with something retrieved to read.
+    if (o.useWrite && genPipe && isFound) {
+        const context = ranked.slice(0, GEN_CONTEXT_N)
+                              .filter(r => r.score > 0)
+                              .map(r => r.doc.text);
+        const written = await generateAnswer(question, context);
+        const g = groundedness(written, context, question);
+        res.generated = written;
+        res.grounded = g.ratio;
+        res.invented = g.invented;
+        res.context = context;
+    }
+    return res;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 4e. RPC  —  lets the Blockly workspace drive this page in a hidden iframe.
+ *
+ * Same contract as face.html's FACE_RPC, so index.html's bridge is the Face
+ * bridge with the names changed. The dataset needs no transfer: this page is
+ * same-origin with the workspace, so it reads the very localStorage the
+ * trainer screen wrote.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+const RPC = {
+    ping: () => true,
+
+    /* 'keywords' | 'meaning' | 'write' — loads whatever that level needs. */
+    setMode: async mode => {
+        rpcMode = (mode === 'meaning' || mode === 'write') ? mode : 'keywords';
+        if (rpcMode === 'meaning' || rpcMode === 'write') {
+            smartOn = true;
+            await loadSmartModel();
+        }
+        if (rpcMode === 'write') {
+            genOn = true;
+            await loadGenModel(null);
+        }
+        return rpcMode;
+    },
+
+    getMode: () => rpcMode,
+
+    sentenceCount: async () => { load(); await loadFromAgent(); return sentences.length; },
+
+    /* ── Teaching from blocks ──────────────────────────────────────────── */
+
+    addSentence: async text => {
+        load(); await loadFromAgent();
+        const t = String(text == null ? '' : text).trim();
+        if (!t) return { added: false, reason: 'empty', count: sentences.length };
+        // Programs get run more than once; duplicates would quietly skew IDF.
+        if (sentences.some(s => s.toLowerCase() === t.toLowerCase())) {
+            return { added: false, reason: 'duplicate', count: sentences.length, text: t };
+        }
+        sentences.push(t);
+        save(); renderList();
+        return { added: true, count: sentences.length, text: t, words: tokenize(t).length };
+    },
+
+    /* The cosine, term by term, for one of the ranked sentences.
+     *
+     * Both vectors were already scaled to length 1 when the index was built,
+     * so the score is just a sum of products — this returns those products so
+     * the terminal and the popup can show the addition rather than assert it.
+     *
+     * `rank` is 1-based: 1 is the best match, as printed in the score list. */
+    cosineDetail: async rank => {
+        if (!lastFull || !lastFull.index || !lastFull.qVec) return null;
+        const r = lastFull;
+        const list = r.ranked || [];
+        if (!list.length) return null;
+
+        const i = Math.max(0, Math.min(list.length - 1, (parseInt(rank, 10) || 1) - 1));
+        const pick = list[i];
+        const dv = pick.doc.vec;
+
+        const shown = new Map();
+        sentences.forEach(s => {
+            const raw = s.toLowerCase().replace(PUNCT, ' ').split(/\s+/).filter(Boolean);
+            tokenize(s).forEach((t, k) => { if (!shown.has(t)) shown.set(t, raw[k] || t); });
+        });
+        const r2 = v => Math.round(v * 100) / 100;
+
+        const terms = [];
+        r.qVec.forEach((w, t) => {
+            if (!dv.has(t)) return;
+            terms.push({ word: shown.get(t) || t, q: r2(w), d: r2(dv.get(t)), p: r2(w * dv.get(t)) });
+        });
+        terms.sort((a, b) => b.p - a.p);
+
+        /* ── The textbook form ────────────────────────────────────────────
+         * The engine normalises both vectors while building the index, so by
+         * the time scoring happens the magnitudes are already divided out and
+         * there is nothing left to show. Rebuild the RAW tf*idf weights here
+         * purely so the working can be displayed: dot product, both
+         * magnitudes, then the division. It lands on the same number the fast
+         * path produced, which is the point worth showing. */
+        const idf = r.index.idf;
+        const qtf = new Map();
+        tokenize(r.question).forEach(t => qtf.set(t, (qtf.get(t) || 0) + 1));
+
+        const rawOf = (tfMap) => {
+            const m = new Map();
+            tfMap.forEach((count, t) => { if (idf.has(t)) m.set(t, count * idf.get(t)); });
+            return m;
+        };
+        const magOf = (m) => {
+            let s = 0;
+            m.forEach(v => { s += v * v; });
+            return Math.sqrt(s);
+        };
+
+        /* Round the inputs FIRST, then do every later step on the rounded
+         * numbers. Computing from full precision and only rounding on the way
+         * out printed lines like "2.10 x 2.10 = 4.40", which a child checking
+         * on a calculator gets as 4.41 — the shown inputs did not produce the
+         * shown output. Now the whole panel closes by hand. */
+        const qRaw = new Map();
+        rawOf(qtf).forEach((v, t) => qRaw.set(t, r2(v)));
+        const dRaw = new Map();
+        rawOf(pick.doc.tf).forEach((v, t) => dRaw.set(t, r2(v)));
+
+        const qMag = r2(magOf(qRaw));
+        const dMag = r2(magOf(dRaw));
+
+        let dotSum = 0;
+        const rawTerms = [];
+        qRaw.forEach((qv, t) => {
+            if (!dRaw.has(t)) return;
+            const dvv = dRaw.get(t);
+            const p = r2(qv * dvv);
+            dotSum += p;
+            rawTerms.push({ word: shown.get(t) || t, q: qv, d: dvv, p: p });
+        });
+        dotSum = r2(dotSum);
+        rawTerms.sort((a, b) => b.p - a.p);
+
+        return {
+            rank: i + 1,
+            question: r.question,
+            sentence: pick.doc.text,
+            terms: terms,
+            total: r2(pick.score),
+            method: r.method,
+            // Below MIN_FOR_TFIDF the engine scores by plain word overlap, so
+            // the cosine worked out here will NOT be the score it reported.
+            // Callers warn rather than quietly showing a number that disagrees.
+            tfidf: sentences.length >= MIN_FOR_TFIDF,
+            maths: {
+                rawTerms: rawTerms,
+                dot: dotSum,
+                qMag: qMag,
+                dMag: dMag,
+                qParts: Array.from(qRaw.values()),
+                dParts: Array.from(dRaw.values()),
+                cosine: r2((qMag * dMag) ? dotSum / (qMag * dMag) : 0)
+            }
+        };
+    },
+
+    /* One piece of the cosine working, so a block can pull a real value into
+     * the formula instead of the student typing a made-up number.
+     * which: 'dot' | 'qmag' | 'dmag'. Returns 0 before anything is asked. */
+    cosinePart: async (rank, which) => {
+        const d = await RPC.cosineDetail(rank);
+        if (!d || !d.maths) return 0;
+        if (which === 'qmag') return d.maths.qMag;
+        if (which === 'dmag') return d.maths.dMag;
+        return d.maths.dot;
+    },
+
+    /* Sentences split into the words the maths actually sees, so the popup can
+     * show tokenising as a step instead of asserting it happened. */
+    getSentences: async () => {
+        load(); await loadFromAgent();
+        return sentences.map(s => ({
+            text: s,
+            words: s.toLowerCase().replace(PUNCT, ' ').split(/\s+/).filter(Boolean)
+        }));
+    },
+
+    clearAll: async () => {
+        load();
+        sentences = [];
+        save(); renderList();
+        return 0;
+    },
+
+    /* ── The numbers, for the terminal walk-through ─────────────────────── */
+
+    /* Words are stored stemmed ("citi"), which is not what a student typed.
+     * Pair every stem with the first real word that produced it so the
+     * terminal can show "city 2.10" rather than "citi 2.10". */
+    wordNumbers: async () => {
+        load(); await loadFromAgent();
+        if (!sentences.length) return { total: 0, rows: [] };
+
+        const index = buildIndex(sentences);
+        const shown = new Map();
+        sentences.forEach(s => {
+            const raw = s.toLowerCase().replace(PUNCT, ' ').split(/\s+/).filter(Boolean);
+            tokenize(s).forEach((t, i) => { if (!shown.has(t)) shown.set(t, raw[i] || t); });
+        });
+
+        const rows = [];
+        index.idf.forEach((v, t) => rows.push({
+            word: shown.get(t) || t,
+            idf: Math.round(v * 100) / 100,
+            df: index.df.get(t) || 0
+        }));
+        rows.sort((a, b) => b.idf - a.idf || a.word.localeCompare(b.word));
+        return { total: sentences.length, rows: rows };
+    },
+
+    /* ── Build-your-own scoring ─────────────────────────────────────────
+     * Instead of letting the formula decide what each word is worth, the
+     * student decides. Scoring is deliberately the simplest thing that works:
+     *
+     *     score of a sentence = sum of MY numbers for the question's words
+     *                           that appear in it
+     *
+     * No cosine, no normalising — every step is an addition a child can check
+     * by hand, which is the whole point. Words with no number count as 0, so
+     * forgetting one is visible rather than silent.
+     *
+     * Keys are stems, so "plants" and "plant" share a number like everywhere
+     * else in the engine; the word the student typed is kept for display. */
+
+    setMyWeight: async (word, n) => {
+        const raw = String(word == null ? '' : word).trim();
+        const t = tokenize(raw)[0];
+        if (!t) return myWeights.size;
+        myWeights.set(t, { word: raw.toLowerCase(), n: Number(n) || 0 });
+        return myWeights.size;
+    },
+
+    clearMyWeights: async () => { myWeights.clear(); return 0; },
+
+    scoreWithMyWeights: async question => {
+        load(); await loadFromAgent();
+        const q = String(question == null ? '' : question);
+        const qStems = Array.from(new Set(tokenize(q)));
+
+        const weights = [];
+        myWeights.forEach((v, k) => weights.push({
+            word: v.word, n: v.n, inQuestion: qStems.indexOf(k) >= 0
+        }));
+        weights.sort((a, b) => b.n - a.n);
+
+        const rows = sentences.map(text => {
+            const set = new Set(tokenize(text));
+            const hits = [];
+            qStems.forEach(t => {
+                if (!set.has(t)) return;
+                const w = myWeights.get(t);
+                hits.push({ word: w ? w.word : t, n: w ? w.n : 0, assigned: !!w });
+            });
+            const total = hits.reduce((s, h) => s + h.n, 0);
+            return { text: text, hits: hits, total: total };
+        });
+
+        const best = rows.slice().sort((a, b) => b.total - a.total)[0] || null;
+        return {
+            question: q,
+            words: qStems.length,
+            weights: weights,
+            rows: rows,
+            best: (best && best.total > 0) ? best : null
+        };
+    },
+
+    /* "in_how_many" from the formula — the document frequency of one word. */
+    wordDf: async word => {
+        load(); await loadFromAgent();
+        if (!sentences.length) return 0;
+        const t = tokenize(String(word == null ? '' : word))[0];
+        if (!t) return 0;
+        return buildIndex(sentences).df.get(t) || 0;
+    },
+
+    wordNumber: async word => {
+        load(); await loadFromAgent();
+        if (!sentences.length) return 0;
+        const index = buildIndex(sentences);
+        const t = tokenize(String(word == null ? '' : word))[0];
+        const v = t ? index.idf.get(t) : 0;
+        return v ? Math.round(v * 100) / 100 : 0;
+    },
+
+    /* Everything behind the last answer, ready to be printed line by line. */
+    explain: async () => {
+        if (!lastFull) return null;
+        const r = lastFull;
+        const idf = r.index ? r.index.idf : new Map();
+
+        const seen = new Set();
+        const words = [];
+        // Stems are not what the student typed, so pair each one back to a real
+        // word — "citi" is meaningless on screen, "city" is the lesson.
+        const shown = new Map();
+        sentences.forEach(s => {
+            const raw = s.toLowerCase().replace(PUNCT, ' ').split(/\s+/).filter(Boolean);
+            tokenize(s).forEach((t, i) => { if (!shown.has(t)) shown.set(t, raw[i] || t); });
+        });
+        const qRaw = String(r.question || '').toLowerCase()
+                         .replace(PUNCT, ' ').split(/\s+/).filter(Boolean);
+
+        // Fall back to the stem set: a shape change in answerQuery must not be
+        // able to take the whole walk-through down again.
+        const toks = r.qTokens && r.qTokens.length ? r.qTokens : Array.from(r.qStems || []);
+        toks.forEach((t, i) => {
+            if (seen.has(t)) return;
+            seen.add(t);
+            const known = idf.has(t);
+            words.push({
+                word: shown.get(t) || qRaw[i] || t,     // what the student sees
+                stem: t,
+                idf: known ? Math.round(idf.get(t) * 100) / 100 : 0,
+                df: (r.index && r.index.df.get(t)) || 0,
+                known: known,
+                inWinner: !!(r.winnerDoc && r.winnerDoc.set.has(t))
+            });
+        });
+
+        return {
+            question: r.question,
+            method: r.method,
+            found: r.found,
+            winner: r.sentence,
+            short: r.short || '',          // the actual answer, not the sentence
+            confidence: r.confidence,
+            words: words,
+            scores: r.ranked.map(x => ({
+                text: x.doc.text,
+                score: Math.round(x.score * 100) / 100
+            }))
+        };
+    },
+
+    ask: async question => {
+        load();                                  // pick up edits from the trainer
+        await loadFromAgent();
+        const r = await answerQuery(String(question == null ? '' : question), {
+            useMeaning: rpcMode === 'meaning' || rpcMode === 'write',
+            useWrite:   rpcMode === 'write',
+            floor: parseInt($('thresh').value, 10) / 100
+        });
+        lastResult = r;
+        lastFull = r;
+        r.winnerDoc = (r.ranked && r.ranked[0]) ? r.ranked[0].doc : null;
+        return {
+            found: r.found, confidence: r.confidence,
+            answer: r.generated || r.answer,
+            short: r.short, sentence: r.sentence,
+            method: r.method, generated: r.generated,
+            grounded: Math.round(r.grounded * 100), invented: r.invented
+        };
+    }
+};
+
+let rpcMode = 'keywords';
+let myWeights = new Map();   // stem -> { word, n } chosen by the student
+let lastResult = null;
+let lastFull = null;      // the untrimmed result, for the explain walk-through
+
+window.addEventListener('message', async ev => {
+    let msg = ev.data;
+    if (typeof msg === 'string') { try { msg = JSON.parse(msg); } catch (e) { return; } }
+    if (!msg || msg.type !== 'CHAT_RPC') return;
+
+    const reply = (ok, value, error) => {
+        try {
+            ev.source && ev.source.postMessage(
+                { type: 'CHAT_RPC_RESULT', id: msg.id, ok: ok, value: value, error: error }, '*');
+        } catch (e) { /* frame went away mid-call */ }
+    };
+
+    const fn = RPC[msg.fn];
+    if (typeof fn !== 'function') return reply(false, null, 'unknown call: ' + msg.fn);
+    try {
+        reply(true, await fn.apply(null, msg.args || []));
+    } catch (e) {
+        reply(false, null, (e && e.message) ? e.message : String(e));
+    }
+});
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 5. UI
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* Storage is two-tier.
+ *
+ *   localStorage   instant, but scoped to the ORIGIN — and a Cloudflare quick
+ *                  tunnel gets a new random hostname every restart, which
+ *                  silently emptied the dataset each time.
+ *   the agent      /chat-dataset on whatever host served this page, so the
+ *                  tunnel can be called anything and the sentences survive.
+ *
+ * The browser copy stays as the fallback for when the agent is not running
+ * (opened as a file://, or the backend is down). */
+
+function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(sentences)); }
+    catch (e) { /* private mode / storage blocked — the page still works */ }
+    saveToAgent();
+}
+
+let saveTimer = null;
+function saveToAgent() {
+    clearTimeout(saveTimer);                 // typing fires this per keystroke
+    saveTimer = setTimeout(() => {
+        fetch('/chat-dataset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sentences: sentences })
+        }).catch(() => { /* no agent — the localStorage copy still holds */ });
+    }, 400);
+}
+
+function load() {
+    try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) sentences = JSON.parse(raw) || [];
+    } catch (e) { sentences = []; }
+}
+
+/* Called once at start-up. The agent wins when it has anything, because it is
+ * the copy that outlives the tunnel; if it is empty but the browser is not,
+ * we push the browser's copy up so nothing is lost on first upgrade. */
+async function loadFromAgent() {
+    try {
+        const r = await fetch('/chat-dataset', { cache: 'no-store' });
+        if (!r.ok) return false;
+        const data = await r.json();
+        const fromAgent = Array.isArray(data.sentences) ? data.sentences : [];
+        if (fromAgent.length) {
+            sentences = fromAgent;
+            try { localStorage.setItem(STORE_KEY, JSON.stringify(sentences)); } catch (e) {}
+            return true;
+        }
+        if (sentences.length) saveToAgent();
+        return false;
+    } catch (e) {
+        return false;                        // agent not running — fine
+    }
+}
+
+function renderList() {
+    const el = $('slist');
+    $('countPill').textContent = sentences.length + (sentences.length === 1 ? ' sentence' : ' sentences');
+    const tag = $('modeTag');
+    tag.classList.toggle('gen', !!(genOn && genPipe));
+    tag.classList.toggle('smart', !!(smartOn && useModel && !(genOn && genPipe)));
+    tag.textContent =
+        (genOn && genPipe) ? 'Generative'
+      : (smartOn && useModel) ? 'TF-IDF + Meaning'
+      : (sentences.length < MIN_FOR_TFIDF) ? 'Word overlap'
+      : 'TF-IDF';
+
+    if (!sentences.length) {
+        el.innerHTML = '<div class="empty">No sentences yet.<br/>Add a few, or press <b>Load Example</b>.</div>';
+        return;
+    }
+    el.innerHTML = sentences.map((s, i) =>
+        '<div class="sitem">' +
+            '<span class="num">' + (i + 1) + '</span>' +
+            '<span class="txt">' + esc(s) + '</span>' +
+            '<button class="del" onclick="removeSentence(' + i + ')" title="Delete">×</button>' +
+        '</div>'
+    ).join('');
+}
+
+function addSentence() {
+    const inp = $('sentenceInput');
+    const val = inp.value.trim();
+    if (!val) return;
+    sentences.push(val);
+    inp.value = '';
+    inp.focus();
+    save();
+    renderList();
+    rerunIfAsked();
+}
+
+function removeSentence(i) {
+    sentences.splice(i, 1);
+    save();
+    renderList();
+    rerunIfAsked();
+}
+
+function loadExample() {
+    sentences = EXAMPLE.slice();
+    save();
+    renderList();
+    $('questionInput').value = 'how do plants get food?';
+    ask();
+}
+
+function clearAll() {
+    if (sentences.length && !confirm('Delete all ' + sentences.length + ' sentences?')) return;
+    sentences = [];
+    save();
+    renderList();
+    $('result').innerHTML = '';
+}
+
+function rerunIfAsked() {
+    if ($('questionInput').value.trim()) ask();
+}
+
+let askSeq = 0;   // guards against a slow embed call overwriting a newer one
+
+async function ask() {
+    const question = $('questionInput').value.trim();
+    const out = $('result');
+
+    if (!sentences.length) { out.innerHTML = ''; toast('Add some sentences first'); return; }
+    if (!question) { out.innerHTML = ''; return; }
+
+    const seq = ++askSeq;
+    const index = buildIndex(sentences);
+    const found = search(index, question);
+    const floor = parseInt($('thresh').value, 10) / 100;
+    const qStems = new Set(found.qTokens);
+
+    /* ── keyword scores (always) ── */
+    const keyword = found.results.slice();
+    const keywordTop = keyword[0];
+
+    /* ── meaning scores (only when Smart mode is loaded) ── */
+    let ranked = keyword, meaningTop = null, usedMethod = 'keyword', cover = null;
+    if (smartOn && useModel) {
+        try {
+            const vecs = await embedTexts(sentences.concat([question]));
+            if (seq !== askSeq) return;            // a newer question already ran
+            const qv = vecs[vecs.length - 1];
+
+            const meaning = index.docs.map((doc, i) => ({
+                i: i, doc: doc, score: embedSimilarity(qv, vecs[i])
+            }));
+            meaningTop = meaning.slice().sort((a, b) => b.score - a.score)[0];
+
+            // Whichever method the evidence says to believe — not a mix of both.
+            cover = keywordCoverage(index, qStems);
+            usedMethod = cover.trust ? 'keyword' : 'meaning';
+            ranked = cover.trust
+                ? keyword
+                : meaning.slice().sort((a, b) => b.score - a.score);
+        } catch (e) {
+            toast('Smart mode failed on this question — using keywords');
+        }
+    }
+
+    const best = ranked[0];
+    const said = phrase(best, floor, qStems);
+    const pct = Math.round((best ? best.score : 0) * 100);
+    const winIdx = (best && best.score >= floor) ? best.i : -1;
+
+    /* ── generated answer goes on top, filled in once the model replies ── */
+    let html = '';
+    if (genOn && genPipe) {
+        html +=
+            '<div class="gencard" id="genCard">' +
+                '<div class="genhead">✍️ AI wrote this answer' +
+                    '<span class="genbadge">generated</span></div>' +
+                '<div class="gentext waiting" id="genText">writing…</div>' +
+                '<div class="gennote" id="genNoteOut">' +
+                    'Written by the model from the sentence found below — ' +
+                    'not copied from your dataset.</div>' +
+            '</div>';
+    }
+
+    /* ── the answer card ── */
+    html +=
+        '<div class="answer ' + said.tier + '">' +
+            '<div class="lead">' + said.lead + '</div>' +
+            '<div class="text">' +
+                (said.mark ? highlighted(said.mark, esc) : esc(said.text)) +
+            '</div>' +
+            (said.short
+                ? '<div class="source">short answer: <b>' + esc(said.short) + '</b></div>'
+                : '') +
+            '<div class="confbar">' +
+                '<div class="label"><span>Confidence</span><span>' + pct + '%</span></div>' +
+                '<div class="track"><div class="fill ' + said.tier + '" style="width:' + pct + '%"></div></div>' +
+            '</div>' +
+        '</div>';
+
+    /* ── keyword vs meaning, side by side ── */
+    if (meaningTop && keywordTop) {
+        const agree = meaningTop.i === keywordTop.i;
+        html +=
+            '<div class="explain">' +
+                '<h3>Keyword AI vs Meaning AI</h3>' +
+                '<div class="cmp">' +
+                    '<div class="cmpcol' + (!agree && winIdx === keywordTop.i ? ' win' : '') + '">' +
+                        '<div class="cmphead">Keyword AI · TF-IDF</div>' +
+                        '<div class="cmpscore">' + keywordTop.score.toFixed(2) + '</div>' +
+                        '<div class="cmptext">' + esc(keywordTop.doc.text) + '</div>' +
+                    '</div>' +
+                    '<div class="cmpcol' + (!agree && winIdx === meaningTop.i ? ' win' : '') + '">' +
+                        '<div class="cmphead">Meaning AI · embeddings</div>' +
+                        '<div class="cmpscore">' + meaningTop.score.toFixed(2) + '</div>' +
+                        '<div class="cmptext">' + esc(meaningTop.doc.text) + '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="legend">' +
+                    (agree
+                        ? 'Both methods picked the same sentence.'
+                        : 'They disagree. ' + (cover && cover.trust
+                            ? cover.matched + ' of your words appear together in one ' +
+                              'sentence, which is strong evidence — so Keyword AI wins.'
+                            : 'Your words barely appear in any sentence, so there is ' +
+                              'nothing for keywords to go on — Meaning AI wins.')) +
+                '</div>' +
+            '</div>';
+    }
+
+    /* ── which words mattered ── */
+    const seen = new Set();
+    const chips = [];
+    // Same split tokenize() uses, so index i lines up with the stemmed token
+    // and we can show the student the word they actually typed.
+    const rawWords = question.toLowerCase().replace(PUNCT, ' ').split(/\s+/).filter(Boolean);
+    tokenize(question).forEach((t, i) => {
+        if (seen.has(t)) return;
+        seen.add(t);
+        const original = rawWords[i] || t;
+        const df = index.df.get(t) || 0;
+        const weight = index.idf.get(t);
+        const inWinner = winIdx >= 0 && index.docs[winIdx].set.has(t);
+
+        let cls, note;
+        if (df === 0) { cls = 'unknown'; note = 'not in dataset'; }
+        else if (inWinner) { cls = 'hit'; note = weight.toFixed(2); }
+        else if (found.mode === 'tfidf' && df >= Math.max(2, index.N * 0.5)) { cls = 'common'; note = weight.toFixed(2); }
+        else { cls = 'known'; note = weight ? weight.toFixed(2) : ''; }
+
+        chips.push('<span class="word ' + cls + '">' + esc(original) +
+                   (note ? '<span class="w">' + esc(note) + '</span>' : '') + '</span>');
+    });
+
+    html +=
+        '<div class="explain">' +
+            '<h3>Why this answer</h3>' +
+            '<div class="words">' + chips.join('') + '</div>' +
+            '<div class="legend">' +
+                '<span style="color:#15803d">■</span> matched the chosen sentence &nbsp; ' +
+                '<span style="color:#94a3b8">■</span> common word, low weight &nbsp; ' +
+                '<span style="color:#b91c1c">■</span> never seen in the dataset<br/>' +
+                'The small number is the word’s <b>weight</b> — rare words score higher.' +
+            '</div>' +
+        '</div>';
+
+    /* ── full ranking, so the choice is never a black box ── */
+    html +=
+        '<div class="explain">' +
+            '<h3>All sentences, scored</h3>' +
+            '<div class="rank">' +
+            ranked.map(r =>
+                '<div class="rrow' + (r.i === winIdx ? ' win' : '') + '">' +
+                    '<span class="score">' + r.score.toFixed(2) + '</span>' +
+                    '<span class="bartrack"><span class="bar" style="width:' +
+                        Math.max(2, Math.round(r.score * 100)) + '%"></span></span>' +
+                    '<span class="st">' + esc(r.doc.text) + '</span>' +
+                '</div>'
+            ).join('') +
+            '</div>' +
+            (found.mode === 'overlap'
+                ? '<div class="legend">Only ' + index.N + ' sentences so far, so word weights ' +
+                  'would be meaningless. Using plain word overlap until there are ' +
+                  MIN_FOR_TFIDF + '.</div>'
+                : '') +
+        '</div>';
+
+    out.innerHTML = html;
+
+    /* ── Write mode runs last, so the retrieved answer is already on screen
+     *    while the model thinks. Generation takes seconds, not milliseconds. ── */
+    if (genOn && genPipe) {
+        const card = $('genCard'), textEl = $('genText'), noteEl = $('genNoteOut');
+
+        // No context retrieved -> refuse. A language model asked a question with
+        // nothing to read will invent a confident answer, and that is the one
+        // failure a teaching tool must not demonstrate by accident.
+        if (winIdx < 0) {
+            card.classList.add('err');
+            textEl.className = 'gentext';
+            textEl.textContent = 'Nothing found to read.';
+            noteEl.textContent = 'The AI will not write an answer with no matching ' +
+                'sentence — that is when language models start making things up.';
+            return;
+        }
+
+        const context = ranked.slice(0, GEN_CONTEXT_N)
+                              .filter(r => r.score > 0)
+                              .map(r => r.doc.text);
+        try {
+            const written = await generateAnswer(question, context);
+            if (seq !== askSeq) return;            // a newer question already ran
+            textEl.className = 'gentext';
+            textEl.textContent = written || '(the model returned nothing)';
+
+            const g = groundedness(written, context, question);
+            if (g.ratio < GROUNDED_MIN) {
+                card.classList.add('warn');
+                noteEl.innerHTML = '⚠️ <b>The AI may have made this up.</b> ' +
+                    Math.round((1 - g.ratio) * 100) + '% of this answer is not in ' +
+                    'your dataset — invented words: <b>' +
+                    g.invented.slice(0, 6).map(esc).join(', ') + '</b>. ' +
+                    'The model is filling gaps with things it learnt elsewhere, ' +
+                    'which is exactly what "hallucination" means.';
+            } else {
+                noteEl.textContent = 'Written by the model after reading ' +
+                    context.length + (context.length === 1 ? ' sentence' : ' sentences') +
+                    ' from your dataset. This is how an AI assistant answers questions ' +
+                    'about a document: find the right text first, then write from it.';
+            }
+        } catch (err) {
+            if (seq !== askSeq) return;
+            card.classList.add('err');
+            textEl.className = 'gentext';
+            textEl.textContent = 'Could not write an answer.';
+            noteEl.textContent = String(err && err.message || err);
+        }
+    }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * 6. BRIDGE  —  same pattern as train_picker.html
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+function send(type, extra) {
+    const payload = JSON.stringify(Object.assign({ type: type }, extra || {}));
+    if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(payload);
+        return true;
+    }
+    if (window.parent !== window) {
+        window.parent.postMessage(payload, '*');
+        return true;
+    }
+    return false;
+}
+
+function goBack() {
+    if (!send('CLOSE_TEXT_TRAIN')) window.location.href = 'index.html';
+}
+
+/* There is deliberately no "send to blocks" action any more. The workspace
+ * runs this same page in a hidden iframe, same origin, so the blocks read the
+ * very localStorage that save() writes below — there is nothing to transfer.
+ * The old button implied a step that does not exist, and said "Blocks not
+ * wired up yet" whenever this page was opened as a normal tab. */
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* Smart mode. Everything here degrades to plain TF-IDF on failure — a
+ * classroom with no internet must still get a working page. */
+$('smartToggle').addEventListener('change', async e => {
+    const on = e.target.checked;
+    const bar = $('smartbar'), note = $('smartNote'), tag = $('modeTag');
+
+    if (!on) {
+        smartOn = false;
+        bar.classList.remove('err');
+        tag.classList.remove('smart');
+        note.textContent = 'Off: matches words only. On: also matches meaning, ' +
+            'so "motorcycle" can find "bike".';
+        renderList();
+        rerunIfAsked();
+        return;
+    }
+
+    smartOn = true;
+    bar.classList.remove('err');
+    e.target.disabled = true;
+    note.textContent = useModel
+        ? 'Loading…'
+        : 'Downloading language model (28 MB) — this takes a few seconds the first time…';
+
+    try {
+        await loadSmartModel();
+        note.textContent = 'On — the AI now compares meaning as well as words.';
+        tag.classList.add('smart');
+        tag.textContent = 'TF-IDF + Meaning';
+        toast('Smart mode ready');
+    } catch (err) {
+        smartOn = false;
+        e.target.checked = false;
+        bar.classList.add('err');
+        note.textContent = 'Could not load the language model — no internet? ' +
+            'Keyword matching still works normally.';
+    } finally {
+        e.target.disabled = false;
+        rerunIfAsked();
+    }
+});
+
+/* Write mode. Hundreds of MB, so it reports progress per file rather than just
+ * spinning. Cached by transformers.js in the browser Cache API, so this is a
+ * once-per-device download, not once per session. */
+$('genToggle').addEventListener('change', async e => {
+    const on = e.target.checked;
+    const bar = $('genbar'), note = $('genNote'), tag = $('modeTag');
+
+    if (!on) {
+        genOn = false;
+        bar.classList.remove('err');
+        tag.classList.remove('gen');
+        note.textContent = 'Finds the right sentence, then a language model writes a ' +
+            'new answer from it. (Flan-T5, 262 MB, needs internet.)';
+        renderList();
+        rerunIfAsked();
+        return;
+    }
+
+    genOn = true;
+    bar.classList.remove('err');
+    e.target.disabled = true;
+    note.textContent = genPipe ? 'Loading…' : 'Starting download (' + GEN_MODEL_MB + ' MB)…';
+
+    let lastShown = 0;
+    const onProgress = p => {
+        if (p.status !== 'progress' || typeof p.progress !== 'number') return;
+        const now = Date.now();
+        if (now - lastShown < 200) return;         // the callback fires constantly
+        lastShown = now;
+        note.textContent = 'Downloading ' + (p.file || 'model') + ' — ' +
+            Math.round(p.progress) + '%  (once per device, then cached)';
+    };
+
+    try {
+        await loadGenModel(onProgress);
+        note.textContent = 'On — the AI now writes its own answers.';
+        tag.classList.add('gen');
+        tag.textContent = 'Generative';
+        toast('Write mode ready');
+    } catch (err) {
+        genOn = false;
+        e.target.checked = false;
+        bar.classList.add('err');
+        note.textContent = 'Could not load the language model: ' +
+            String(err && err.message || err) +
+            ' — if this page is open as a file:// link, try serving the folder ' +
+            'instead: python -m http.server 8000';
+    } finally {
+        e.target.disabled = false;
+        rerunIfAsked();
+    }
+});
+
+$('thresh').addEventListener('input', e => {
+    $('threshVal').textContent = e.target.value + '%';
+    rerunIfAsked();
+});
+$('sentenceInput').addEventListener('keydown', e => { if (e.key === 'Enter') addSentence(); });
+$('questionInput').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+
+/* ?embed=1 -> the workspace is driving this page over RPC, not a student. */
+if (/[?&]embed=1/.test(location.search)) document.body.classList.add('embed');
+
+load();
+renderList();
+
+// Then reconcile with the agent, which is the copy that survives a new tunnel.
+loadFromAgent().then(ok => { if (ok) renderList(); });
+</script>
+</body>
+</html>

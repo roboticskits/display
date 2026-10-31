@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.mpy
+build/
+backups/
+preview/
+*.zip
+*.bak
+dwin/DWIN_SET_*/
+dwin/DGUS_PROJECT/
+dwin/saved_pictures/
+dwin/studio_cache/
+*.bin
+*.icl

@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DWIN Media & Flash Manager - Curio STM32</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #181b24;
+    --card-border: #282d3d;
+    --ink: #f0f3f8;
+    --muted: #8c96a8;
+    --accent: #681cef;
+    --accent-hover: #7b32f5;
+    --accent-light: #ece4fd;
+    --ok: #00c853;
+    --warn: #ffab00;
+    --err: #ff3d71;
+    --code-bg: #10121a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  header {
+    background: #131620;
+    border-bottom: 1px solid var(--card-border);
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-badge {
+    background: var(--accent);
+    color: white;
+    font-weight: 800;
+    font-size: 14px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    letter-spacing: 0.5px;
+  }
+  .brand h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 700;
+  }
+  .brand p {
+    font-size: 12px;
+    margin: 0;
+    color: var(--muted);
+  }
+  .conn-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: #252a38;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .status-pill.connected { background: rgba(0, 200, 83, 0.15); color: var(--ok); }
+  .status-pill.busy { background: rgba(104, 28, 239, 0.2); color: #b185ff; }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-secondary {
+    background: #2c3244;
+    color: var(--ink);
+  }
+  .btn-secondary:hover:not(:disabled) { background: #3a4258; }
+  .btn-danger {
+    background: rgba(255, 61, 113, 0.15);
+    color: var(--err);
+    border: 1px solid rgba(255, 61, 113, 0.3);
+  }
+  .btn-danger:hover:not(:disabled) { background: rgba(255, 61, 113, 0.25); }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  main {
+    max-width: 1040px;
+    margin: 24px auto;
+    padding: 0 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 800px) {
+    main { grid-template-columns: 1fr; }
+  }
+  .full-col { grid-column: 1 / -1; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .step-num {
+    background: rgba(104, 28, 239, 0.2);
+    color: #a374ff;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 12px;
+    margin-right: 8px;
+  }
+
+  /* Form Controls */
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  select, input[type="range"] {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    background: #10121a;
+    border: 1px solid var(--card-border);
+    color: var(--ink);
+    font-size: 13px;
+    margin-bottom: 16px;
+    outline: none;
+  }
+  select:focus { border-color: var(--accent); }
+
+  /* Dropzone */
+  .dropzone {
+    border: 2px dashed #3a4258;
+    border-radius: 10px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: rgba(16, 18, 26, 0.5);
+    transition: all 0.2s;
+    margin-bottom: 16px;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(104, 28, 239, 0.08);
+  }
+  .dropzone-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+  .dropzone p {
+    margin: 4px 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .dropzone p strong { color: var(--ink); }
+
+  /* Preview Container */
+  .preview-box {
+    background: #10121a;
+    border-radius: 8px;
+    border: 1px solid var(--card-border);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 16px;
+    min-height: 140px;
+    justify-content: center;
+  }
+  .preview-box video, .preview-box img {
+    max-width: 100%;
+    max-height: 180px;
+    border-radius: 6px;
+    background: black;
+  }
+  .media-stats {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat-badge {
+    background: #202432;
+    padding: 3px 8px;
+    border-radius: 6px;
+    color: #cad3e0;
+  }
+
+  /* Progress Bar */
+  .progress-wrap {
+    margin: 16px 0;
+  }
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .progress-bar-bg {
+    background: #202432;
+    height: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    background: linear-gradient(90deg, var(--accent), #9d4edd);
+    height: 100%;
+    width: 0%;
+    transition: width 0.15s ease;
+  }
+
+  /* Log terminal */
+  .terminal {
+    background: var(--code-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: Consolas, Monaco, "Courier New", monospace;
+    font-size: 12px;
+    height: 180px;
+    overflow-y: auto;
+    color: #abb2bf;
+    white-space: pre-wrap;
+    line-height: 1.4;
+  }
+  .terminal .log-cmd { color: #61afef; }
+  .terminal .log-ok { color: var(--ok); }
+  .terminal .log-err { color: var(--err); }
+  .terminal .log-info { color: #e5c07b; }
+
+  /* Quick Actions */
+  .actions-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="logo-badge">DWIN FLASH</span>
+    <div>
+      <h1>Media & Display Memory Manager</h1>
+      <p>Direct Video, Picture & Animation Flash Uploader (DWV Protocol)</p>
+    </div>
+  </div>
+  <div class="conn-bar">
+    <div id="connStatus" class="status-pill">
+      <span class="status-dot"></span>
+      <span id="connStatusText">Disconnected</span>
+    </div>
+    <button id="btnConnect" class="btn-primary" onclick="toggleConnect()">Connect Board</button>
+  </div>
+</header>
+
+<main>
+  <!-- Left Column: Source & Memory Selection -->
+  <div class="card">
+    <div class="card-title">
+      <span><span class="step-num">1</span>Target Display Memory</span>
+    </div>
+
+    <label for="targetMemory">Select Display Memory Slot</label>
+    <select id="targetMemory" onchange="onTargetChange()">
+      <optgroup label="Video Memory (Page 44)">
+        <option value="video_49" data-block="392" data-w="240" data-h="160" data-fps="10" data-max="256" data-page="44" selected>
+          Main Video (Font ID 49 | 240x160 @ 10fps, max 25.6s)
+        </option>
+      </optgroup>
+      <optgroup label="Animations (Short Loops - 160x104)">
+        <option value="anim_28" data-block="224" data-w="160" data-h="104" data-fps="6.25" data-max="256" data-max-blocks="8" data-page="66">
+          Live Animation (Font ID 28 | 160x104, Page 66)
+        </option>
+        <option value="anim_29" data-block="232" data-w="160" data-h="104" data-fps="6.25" data-max="256" data-max-blocks="8" data-page="67">
+          Saved Animation Memory 1 (Font ID 29 | Page 67)
+        </option>
+        <option value="anim_30" data-block="240" data-w="160" data-h="104" data-fps="6.25" data-max="256" data-max-blocks="8" data-page="68">
+          Saved Animation Memory 2 (Font ID 30 | Page 68)
+        </option>
+        <option value="anim_31" data-block="248" data-w="160" data-h="104" data-fps="6.25" data-max="256" data-max-blocks="8" data-page="69">
+          Saved Animation Memory 3 (Font ID 31 | Page 69)
+        </option>
+      </optgroup>
+      <optgroup label="Still Pictures (Photos / Storage)">
+        <option value="pic_1" data-block="192" data-w="408" data-h="272" data-page="46">
+          Saved Picture Slot 1 (Font ID 24 | View & Thumb)
+        </option>
+        <option value="pic_2" data-block="192" data-w="408" data-h="272" data-page="46">
+          Saved Picture Slot 2 (Font ID 24 | View & Thumb)
+        </option>
+        <option value="pic_3" data-block="192" data-w="408" data-h="272" data-page="46">
+          Saved Picture Slot 3 (Font ID 24 | View & Thumb)
+        </option>
+      </optgroup>
+      <optgroup label="User Profile">
+        <option value="profile_26" data-block="208" data-w="408" data-h="272" data-max-blocks="8" data-page="94">
+          Profile Image (Home avatar 48x36 + full view 408x272, Font ID 26)
+        </option>
+      </optgroup>
+    </select>
+
+    <div class="card-title">
+      <span><span class="step-num">2</span>Select Media File</span>
+    </div>
+
+    <input type="file" id="fileInput" style="display:none" onchange="handleFileSelected(this.files[0])">
+    <div class="dropzone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="dropzone-icon">📁</div>
+      <p><strong>Click to browse</strong> or drag & drop video/image here</p>
+      <p id="acceptedFormats">Supports MP4, WebM, GIF, PNG, JPG</p>
+    </div>
+
+    <div style="margin-bottom: 12px;" id="resRow">
+      <label for="resSelect" style="margin-bottom:4px;">Video Resolution</label>
+      <select id="resSelect" onchange="if(currentFile) processMedia();" style="margin-bottom:0;">
+        <option value="240x160" selected>240x160 (Standard - Perfect 3:2 window fit)</option>
+        <option value="192x128">192x128 (Compressed - 36% less data, very fast)</option>
+        <option value="160x112">160x112 (Ultra Fast - 53% less data, ~25s)</option>
+        <option value="190x190">190x190 (Square 1:1 - Overflows 160px height by 30px)</option>
+      </select>
+    </div>
+
+    <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+      <div style="flex: 1;">
+        <label for="fpsSelect" style="margin-bottom:4px;">Frame Rate (FPS)</label>
+        <select id="fpsSelect" onchange="if(currentFile) processMedia();" style="margin-bottom:0;">
+          <option value="10">10 FPS (Smooth - standard)</option>
+          <option value="8">8 FPS (Balanced - 25% faster)</option>
+          <option value="6">6 FPS (Fast - 40% faster)</option>
+          <option value="5" selected>5 FPS (Ultra Fast - ~45s, 1x Real-Time!)</option>
+        </select>
+      </div>
+      <div style="flex: 1;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label style="margin:0">Quality: <span id="lblQuality">55%</span></label>
+        </div>
+        <input type="range" id="qualityRange" min="30" max="85" value="55" oninput="document.getElementById('lblQuality').textContent = this.value + '%'; if(currentFile) processMedia();" style="margin-bottom:0; height: 38px;">
+      </div>
+    </div>
+    <p style="font-size: 11px; color: var(--muted); margin: 0 0 16px;">💡 Real-time speed fix: The uploader automatically syncs any FPS (5, 6, 8, 10) to the display's 10 FPS clock so your video plays at <strong>true 1x normal speed</strong>.</p>
+
+    <button id="btnProcess" class="btn-secondary" style="width:100%" onclick="processMedia()" disabled>
+      ⚡ Process & Build DWIN ICL Package
+    </button>
+  </div>
+
+  <!-- Right Column: Preview & Upload Controls -->
+  <div class="card">
+    <div class="card-title">
+      <span><span class="step-num">3</span>Preview & Flash</span>
+    </div>
+
+    <div class="preview-box" id="previewBox">
+      <span style="color:var(--muted); font-size:13px">No file loaded yet</span>
+    </div>
+
+    <div class="media-stats" id="mediaStats" style="display:none">
+      <span class="stat-badge" id="statRes">240x160</span>
+      <span class="stat-badge" id="statFrames">0 frames</span>
+      <span class="stat-badge" id="statSize">0 KB</span>
+      <span class="stat-badge" id="statBlocks">0 Blocks (32KB)</span>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap" style="display:none">
+      <div class="progress-header">
+        <span id="progressStatus">Transferring to DWIN Flash...</span>
+        <span id="progressPercent">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px;">
+        <span id="progressBlocks">Block 0 / 0</span>
+        <span id="progressSpeed">0 KB/s</span>
+      </div>
+    </div>
+
+    <button id="btnUpload" class="btn-primary" style="width:100%; padding:12px; font-size:14px; margin-top:12px;" onclick="uploadToDisplay()" disabled>
+      🚀 Flash Direct to DWIN Display Memory
+    </button>
+
+    <div class="actions-row" style="margin-top:16px;">
+      <button class="btn-secondary" onclick="sendDisplayPageJump()" title="Switch display to target page">
+        📺 Switch Display Page
+      </button>
+      <button class="btn-secondary" onclick="softResetBoard()" title="Reset Curio board">
+        🔄 Soft Reset Board
+      </button>
+    </div>
+  </div>
+
+  <!-- Full-Width Terminal / Log Output -->
+  <div class="card full-col">
+    <div class="card-title">
+      <span>Serial Activity & Protocol Log</span>
+      <button class="btn-secondary" style="padding:4px 8px; font-size:11px" onclick="clearLog()">Clear</button>
+    </div>
+    <div class="terminal" id="termLog"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+// -----------------------------------------------------------------------------
+// DWIN DGUS II JPEG ENCODER & ICL BUILDER (Byte-identical to board firmware)
+// -----------------------------------------------------------------------------
+const QL = [16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40,
+  57, 69, 56, 14, 17, 22, 29, 51, 87, 80, 62, 18, 22, 37, 56, 68, 109, 103, 77, 24,
+  35, 55, 64, 81, 104, 113, 92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98,
+  112, 100, 103, 99];
+const QC = [17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99,
+  99, 99, 99, 47, 66, 99, 99, 99, 99, 99, 99].concat(new Array(32).fill(99));
+const ZZ = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33,
+  40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36,
+  29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+const DC_BITS = [[0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0], [0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]];
+const DC_VALS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const AC_BITS = [[0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7D], [0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77]];
+const hexBytes = s => { const a = []; for (let i = 0; i < s.length; i += 2) a.push(parseInt(s.substr(i, 2), 16)); return a; };
+const AC_VALS = [hexBytes(
+  '01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a' +
+  '3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a9293' +
+  '9495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6' +
+  'e7e8e9eaf1f2f3f4f5f6f7f8f9fa'), hexBytes(
+  '000102031104052131061241510761711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a26' +
+  '2728292a35363738393a434445464748494a535455565758595a636465666768696a737475767778797a82838485868788' +
+  '898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3' +
+  'e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa')];
+
+function huff(bits, vals) {
+  const code = new Int32Array(256), size = new Int32Array(256);
+  let c = 0, k = 0;
+  for (let ln = 1; ln <= 16; ln++) {
+    for (let i = 0; i < bits[ln - 1]; i++) { code[vals[k]] = c; size[vals[k]] = ln; c++; k++; }
+    c <<= 1;
+  }
+  return [code, size];
+}
+const DCL = huff(DC_BITS[0], DC_VALS), ACL = huff(AC_BITS[0], AC_VALS[0]);
+const DCC = huff(DC_BITS[1], DC_VALS), ACC = huff(AC_BITS[1], AC_VALS[1]);
+
+function qtable(base, q) {
+  const s = q < 50 ? Math.floor(5000 / q) : 200 - 2 * q;
+  return base.map(b => Math.min(255, Math.max(1, Math.floor((b * s + 50) / 100))));
+}
+
+class Bits {
+  constructor(cap) { this.buf = new Uint8Array(cap); this.p = 0; this.acc = 0; this.n = 0; }
+  room(k) {
+    if (this.p + k <= this.buf.length) return;
+    const nb = new Uint8Array(Math.max(this.buf.length * 2, this.p + k));
+    nb.set(this.buf); this.buf = nb;
+  }
+  bytes(a) { this.room(a.length); this.buf.set(a, this.p); this.p += a.length; }
+  put(code, size) {
+    this.acc = (this.acc << size) | code;
+    this.n += size;
+    this.room(8);
+    while (this.n >= 8) {
+      this.n -= 8;
+      const b = (this.acc >> this.n) & 0xFF;
+      this.buf[this.p++] = b;
+      if (b === 0xFF) this.buf[this.p++] = 0;
+    }
+    this.acc &= (1 << this.n) - 1;
+  }
+}
+
+function fdct(d) {
+  for (let i = 0; i < 64; i += 8) {
+    const t0 = d[i] + d[i + 7], t7 = d[i] - d[i + 7], t1 = d[i + 1] + d[i + 6], t6 = d[i + 1] - d[i + 6];
+    const t2 = d[i + 2] + d[i + 5], t5 = d[i + 2] - d[i + 5], t3 = d[i + 3] + d[i + 4], t4 = d[i + 3] - d[i + 4];
+    const t10 = t0 + t3, t13 = t0 - t3, t11 = t1 + t2, t12 = t1 - t2;
+    d[i] = (t10 + t11) * 4;
+    d[i + 4] = (t10 - t11) * 4;
+    let z1 = (t12 + t13) * 4433;
+    d[i + 2] = Math.floor((z1 + t13 * 6270 + 1024) / 2048);
+    d[i + 6] = Math.floor((z1 - t12 * 15137 + 1024) / 2048);
+    z1 = t4 + t7; const z2 = t5 + t6; let z3 = t4 + t6, z4 = t5 + t7;
+    const z5 = (z3 + z4) * 9633;
+    const a4 = t4 * 2446, a5 = t5 * 16819, a6 = t6 * 25172, a7 = t7 * 12299;
+    const b1 = z1 * -7373, b2 = z2 * -20995;
+    z3 = z3 * -16069 + z5; z4 = z4 * -3196 + z5;
+    d[i + 7] = Math.floor((a4 + b1 + z3 + 1024) / 2048);
+    d[i + 5] = Math.floor((a5 + b2 + z4 + 1024) / 2048);
+    d[i + 3] = Math.floor((a6 + b2 + z3 + 1024) / 2048);
+    d[i + 1] = Math.floor((a7 + b1 + z4 + 1024) / 2048);
+  }
+  for (let i = 0; i < 8; i++) {
+    const t0 = d[i] + d[i + 56], t7 = d[i] - d[i + 56], t1 = d[i + 8] + d[i + 48], t6 = d[i + 8] - d[i + 48];
+    const t2 = d[i + 16] + d[i + 40], t5 = d[i + 16] - d[i + 40], t3 = d[i + 24] + d[i + 32], t4 = d[i + 24] - d[i + 32];
+    const t10 = t0 + t3, t13 = t0 - t3, t11 = t1 + t2, t12 = t1 - t2;
+    d[i] = Math.floor((t10 + t11 + 2) / 4);
+    d[i + 32] = Math.floor((t10 - t11 + 2) / 4);
+    let z1 = (t12 + t13) * 4433;
+    d[i + 16] = Math.floor((z1 + t13 * 6270 + 16384) / 32768);
+    d[i + 48] = Math.floor((z1 - t12 * 15137 + 16384) / 32768);
+    z1 = t4 + t7; const z2 = t5 + t6; let z3 = t4 + t6, z4 = t5 + t7;
+    const z5 = (z3 + z4) * 9633;
+    const a4 = t4 * 2446, a5 = t5 * 16819, a6 = t6 * 25172, a7 = t7 * 12299;
+    const b1 = z1 * -7373, b2 = z2 * -20995;
+    z3 = z3 * -16069 + z5; z4 = z4 * -3196 + z5;
+    d[i + 56] = Math.floor((a4 + b1 + z3 + 16384) / 32768);
+    d[i + 40] = Math.floor((a5 + b2 + z4 + 16384) / 32768);
+    d[i + 24] = Math.floor((a6 + b2 + z3 + 16384) / 32768);
+    d[i + 8] = Math.floor((a7 + b1 + z4 + 16384) / 32768);
+  }
+}
+
+function block(d, q, prev, dct, act, bw) {
+  fdct(d);
+  const h = q[0] >> 1, v0 = d[0];
+  const dc = v0 >= 0 ? Math.floor((v0 + h) / q[0]) : -Math.floor((h - v0) / q[0]);
+  const diff = dc - prev;
+  let a = diff < 0 ? -diff : diff, nb = 0;
+  while (a) { nb++; a >>= 1; }
+  bw.put(dct[0][nb], dct[1][nb]);
+  if (nb) bw.put(diff > 0 ? diff : diff + (1 << nb) - 1, nb);
+  let run = 0;
+  for (let k = 1; k < 64; k++) {
+    const qq = q[k];
+    let v = d[ZZ[k]];
+    v = v >= 0 ? Math.floor((v + (qq >> 1)) / qq) : -Math.floor(((qq >> 1) - v) / qq);
+    if (v === 0) { run++; continue; }
+    while (run > 15) { bw.put(act[0][0xF0], act[1][0xF0]); run -= 16; }
+    a = v < 0 ? -v : v; nb = 0;
+    while (a) { nb++; a >>= 1; }
+    const s = (run << 4) | nb;
+    bw.put(act[0][s], act[1][s]);
+    bw.put(v > 0 ? v : v + (1 << nb) - 1, nb);
+    run = 0;
+  }
+  if (run) bw.put(act[0][0], act[1][0]);
+  return dc;
+}
+
+function encodeFrame(rgba, w, h, quality) {
+  const ql = qtable(QL, quality), qc = qtable(QC, quality);
+  const qlz = ZZ.map(z => ql[z] * 8), qcz = ZZ.map(z => qc[z] * 8);
+  let hd = [0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 0x4A, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
+  [[0, ql], [1, qc]].forEach(([tid, qt]) => { hd = hd.concat([0xFF, 0xDB, 0, 67, tid], ZZ.map(z => qt[z])); });
+  hd = hd.concat([0xFF, 0xC0, 0, 17, 8, h >> 8, h & 255, w >> 8, w & 255, 3, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1]);
+  [[0x00, DC_BITS[0], DC_VALS], [0x10, AC_BITS[0], AC_VALS[0]], [0x01, DC_BITS[1], DC_VALS], [0x11, AC_BITS[1], AC_VALS[1]]]
+    .forEach(([tc, bits, vals]) => { const ln = 19 + vals.length; hd = hd.concat([0xFF, 0xC4, ln >> 8, ln & 255, tc], bits, vals); });
+  const pad = ((-(10 + hd.length + 14)) % 4 + 4) % 4;
+  hd = hd.concat([0xFF, 0xDA, 0, 12 + pad, 3, 1, 0x00, 2, 0x11, 3, 0x11, 0, 63, 0], new Array(pad).fill(0));
+  const hl = hd.length;
+  const bw = new Bits(w * h + 4096);
+  bw.p = 10;
+  bw.bytes(hd);
+  const Y = new Int32Array(64), U = new Int32Array(64), V = new Int32Array(64);
+  let py = 0, pu = 0, pv = 0;
+  for (let by = 0; by < h; by += 8) {
+    for (let bx = 0; bx < w; bx += 8) {
+      let k = 0;
+      for (let r = 0; r < 8; r++) {
+        let i = ((by + r) * w + bx) * 4;
+        for (let c = 0; c < 8; c++, i += 4, k++) {
+          const R = rgba[i], G = rgba[i + 1], B = rgba[i + 2];
+          Y[k] = ((77 * R + 150 * G + 29 * B + 128) >> 8) - 128;
+          U[k] = (-43 * R - 85 * G + 128 * B + 128) >> 8;
+          V[k] = (128 * R - 107 * G - 21 * B + 128) >> 8;
+        }
+      }
+      py = block(Y, qlz, py, DCL, ACL, bw);
+      pu = block(U, qcz, pu, DCC, ACC, bw);
+      pv = block(V, qcz, pv, DCC, ACC, bw);
+    }
+  }
+  if (bw.n) bw.put((1 << (8 - bw.n)) - 1, 8 - bw.n);
+  bw.bytes([0xFF, 0xD9]);
+  while ((bw.p - 10 - hl) % 4) bw.bytes([0]);
+  const sl = bw.p - 10 - hl;
+  bw.buf.set([w >> 8, w & 255, h >> 8, h & 255, hl >> 8, hl & 255, (sl >>> 24) & 255, (sl >> 16) & 255, (sl >> 8) & 255, sl & 255], 0);
+  return bw.buf.slice(0, bw.p);
+}
+
+function crc16modbus(a) {
+  let c = 0xFFFF;
+  for (let i = 0; i < a.length; i++) {
+    c ^= a[i];
+    for (let b = 0; b < 8; b++) c = (c & 1) ? (c >>> 1) ^ 0xA001 : c >>> 1;
+  }
+  return c;
+}
+
+const CRC32T = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(a) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < a.length; i++) c = CRC32T[(c ^ a[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function buildIcl(records, count, srcFps = 10, displayFps = 10) {
+  const tableEnd = 16 + 4 * count;
+  const offs = [];
+  let o = tableEnd;
+  records.forEach(r => { offs.push(o); o += r.length; });
+  const out = new Uint8Array(o);
+  out.set([0x44, 0x47, 0x55, 0x53, 0x5F, 0x33], 0); // DGUS_3
+  const be32 = (p, v) => { out[p] = (v >>> 24) & 255; out[p + 1] = (v >>> 16) & 255; out[p + 2] = (v >>> 8) & 255; out[p + 3] = v & 255; };
+  be32(8, o - 8);
+  out[12] = 4; out[13] = 0;
+  out[14] = (count - 1) & 255; out[15] = (count - 1) >> 8;
+  
+  // 1x Real-time playback mapping: hold each frame according to (displayFps / srcFps)
+  for (let i = 0; i < count; i++) {
+    const frameIdx = Math.floor(i * srcFps / displayFps) % records.length;
+    be32(16 + 4 * i, offs[frameIdx]);
+  }
+  records.forEach((r, i) => out.set(r, offs[i]));
+  const c = crc16modbus(out.subarray(8));
+  out[6] = c & 255; out[7] = c >> 8;
+  return out;
+}
+
+const toHex = b => Array.from(b).map(x => (x < 16 ? '0' : '') + x.toString(16)).join('');
+
+// -----------------------------------------------------------------------------
+// WEB SERIAL & DWV PROTOCOL CLIENT
+// -----------------------------------------------------------------------------
+let port = null, reader = null, writer = null;
+let rxBuf = '';
+let wakers = [];
+let preparedIcl = null;
+let currentFile = null;
+let isBusy = false;
+
+function log(msg, cls = '') {
+  const el = document.getElementById('termLog');
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  const time = new Date().toLocaleTimeString();
+  d.textContent = `[${time}] ${msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('termLog').innerHTML = ''; }
+
+async function toggleConnect() {
+  if (port) {
+    disconnectSerial();
+    return;
+  }
+  if (!navigator.serial) {
+    alert('Web Serial is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    startReading();
+    setConnState('connected', 'Connected (115200)');
+    document.getElementById('btnConnect').textContent = 'Disconnect';
+    document.getElementById('btnConnect').className = 'btn-danger';
+    log('Connected to Curio board serial port.', 'log-ok');
+    updateUIState();
+  } catch (e) {
+    log('Connection failed: ' + e.message, 'log-err');
+    setConnState('error', 'Connect failed');
+  }
+}
+
+async function disconnectSerial() {
+  if (reader) {
+    try { await reader.cancel(); } catch(e){}
+    reader = null;
+  }
+  if (writer) {
+    try { await writer.close(); } catch(e){}
+    writer = null;
+  }
+  if (port) {
+    try { await port.close(); } catch(e){}
+    port = null;
+  }
+  setConnState('disconnected', 'Disconnected');
+  document.getElementById('btnConnect').textContent = 'Connect Board';
+  document.getElementById('btnConnect').className = 'btn-primary';
+  log('Serial port disconnected.', 'log-info');
+  updateUIState();
+}
+
+function setConnState(kind, text) {
+  const pill = document.getElementById('connStatus');
+  const txt = document.getElementById('connStatusText');
+  pill.className = 'status-pill ' + kind;
+  txt.textContent = text;
+}
+
+async function startReading() {
+  const dec = new TextDecoder();
+  while (port && port.readable) {
+    try {
+      reader = port.readable.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          const s = dec.decode(value);
+          rxBuf += s;
+          let nl;
+          while ((nl = rxBuf.indexOf('\n')) >= 0) {
+            const line = rxBuf.slice(0, nl).trim();
+            rxBuf = rxBuf.slice(nl + 1);
+            if (line) handleIncomingLine(line);
+          }
+        }
+      }
+    } catch (e) {
+      break;
+    } finally {
+      if (reader) { reader.releaseLock(); reader = null; }
+    }
+  }
+}
+
+function handleIncomingLine(line) {
+  if (line.startsWith('DWV:')) {
+    log('<= ' + line, 'log-cmd');
+  } else {
+    // Other board lines (telemetry, boot logs)
+    if (line.length < 100) log('<= ' + line);
+  }
+  for (let i = wakers.length - 1; i >= 0; i--) {
+    const w = wakers[i];
+    if (w.re.test(line)) {
+      wakers.splice(i, 1);
+      w.res(line);
+    }
+  }
+}
+
+function waitFor(re, timeoutMs = 30000) {
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => {
+      const idx = wakers.findIndex(w => w.res === res);
+      if (idx >= 0) wakers.splice(idx, 1);
+      rej(new Error('Timeout waiting for ' + re));
+    }, timeoutMs);
+    wakers.push({ re, res: (line) => { clearTimeout(t); res(line); } });
+  });
+}
+
+async function sendSerial(str) {
+  if (!writer) throw new Error('Not connected');
+  const enc = new TextEncoder();
+  await writer.write(enc.encode(str));
+}
+
+// -----------------------------------------------------------------------------
+// MEDIA PROCESSING (Canvas Video / Image -> DWIN ICL)
+// -----------------------------------------------------------------------------
+function onTargetChange() {
+  const sel = document.getElementById('targetMemory');
+  const opt = sel.options[sel.selectedIndex];
+  const isVideo = sel.value.startsWith('video') || sel.value.startsWith('anim');
+  const resRow = document.getElementById('resRow');
+  if (resRow) resRow.style.display = sel.value.startsWith('video') ? 'block' : 'none';
+  const fpsWrap = document.getElementById('fpsSelect')?.parentElement;
+  if (fpsWrap) fpsWrap.style.display = isVideo ? 'block' : 'none';
+  const w = opt.dataset.w, h = opt.dataset.h;
+  document.getElementById('statRes').textContent = `${w}x${h}`;
+  if (currentFile) processMedia();
+}
+
+function handleFileSelected(file) {
+  if (!file) return;
+  currentFile = file;
+  const pBox = document.getElementById('previewBox');
+  pBox.innerHTML = '';
+
+  const isVideo = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.webm');
+  const isGif = file.type === 'image/gif' || file.name.endsWith('.gif');
+
+  if (isVideo) {
+    const v = document.createElement('video');
+    v.src = URL.createObjectURL(file);
+    v.controls = true;
+    v.autoplay = true;
+    v.loop = true;
+    v.muted = true;
+    pBox.appendChild(v);
+  } else {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    pBox.appendChild(img);
+  }
+  document.getElementById('btnProcess').disabled = false;
+  processMedia();
+}
+
+async function processMedia() {
+  if (!currentFile) return;
+  preparedIcl = null;
+  updateUIState();
+  const btn = document.getElementById('btnProcess');
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing frames & encoding JPEGs...';
+
+  const sel = document.getElementById('targetMemory');
+  const opt = sel.options[sel.selectedIndex];
+  const isVideo = currentFile.type.startsWith('video/') || currentFile.name.endsWith('.mp4') || currentFile.name.endsWith('.webm');
+  const isMainVideo = sel.value.startsWith('video');
+  const isAnim = sel.value.startsWith('anim');
+  const isProfile = sel.value === 'profile_26';
+
+  let targetW = parseInt(opt.dataset.w);
+  let targetH = parseInt(opt.dataset.h);
+  if (isVideo && isMainVideo && document.getElementById('resSelect')) {
+    const parts = document.getElementById('resSelect').value.split('x');
+    if (parts.length === 2) {
+      targetW = parseInt(parts[0]);
+      targetH = parseInt(parts[1]);
+    }
+  }
+
+  const displayFps = parseFloat(opt.dataset.fps || (isAnim ? 6.25 : 10));
+  const targetFps = parseInt(document.getElementById('fpsSelect')?.value || (isAnim ? 6 : 10));
+  const maxBlocks = parseInt(opt.dataset.maxBlocks || (isAnim ? 8 : 120));
+
+  // Determine frame limit
+  let maxUniqueFrames = 256;
+  if (isAnim) {
+    // Animation memories (Font 28-31) have 8 blocks (256 KB). At 160x104 @ Q55 (~3.9 KB), max 48-55 frames fit.
+    maxUniqueFrames = 48;
+  } else if (isMainVideo) {
+    const maxDuration = 256 / displayFps;
+    maxUniqueFrames = Math.max(1, Math.floor(maxDuration * targetFps));
+  }
+  const quality = parseInt(document.getElementById('qualityRange').value);
+
+  try {
+    let records = [];
+
+    if (isProfile && isVideo) throw new Error('Choose a PNG or JPG image for the profile.');
+    if (isProfile) {
+      records = await extractProfileFrames(currentFile, quality);
+    } else if (isVideo) {
+      records = await extractVideoFrames(currentFile, targetW, targetH, targetFps, maxUniqueFrames, quality);
+    } else {
+      // Still Image / Single Photo
+      records = await extractImageFrame(currentFile, targetW, targetH, quality);
+    }
+
+    // IMPORTANT: In DWIN DGUS II, the Animation Icon controls on Page 44 (video) and
+    // Pages 66-70 (animations) ALWAYS loop icons 0 to 255.
+    // The ICL index table must ALWAYS contain 256 entries to prevent black/blank screens!
+    const count = (isVideo || isAnim) ? 256 : records.length;
+    // Still-image libraries use each icon once. Video timing would map both
+    // profile entries to icon 0 when the selected FPS is below the display FPS.
+    preparedIcl = buildIcl(records, count,
+                           isVideo || isAnim ? targetFps : 1,
+                           isVideo || isAnim ? displayFps : 1);
+
+    const nblocks = Math.ceil(preparedIcl.length / 32768);
+    const statBlocksEl = document.getElementById('statBlocks');
+    document.getElementById('mediaStats').style.display = 'flex';
+    document.getElementById('statRes').textContent = `${targetW}x${targetH}`;
+    document.getElementById('statFrames').textContent = isProfile ? 'Home avatar (48x36) + full image (408x272)' : `${records.length} unique frames (${targetFps} FPS @ 1x)`;
+    document.getElementById('statSize').textContent = `${(preparedIcl.length / 1024).toFixed(1)} KB`;
+    
+    if (nblocks > maxBlocks) {
+      preparedIcl = null;
+      statBlocksEl.style.background = '#e06c75';
+      statBlocksEl.textContent = `⚠️ ${nblocks} / ${maxBlocks} Blocks (OVERFLOW!)`;
+      log(`Warning: package uses ${nblocks} blocks, which exceeds slot limit (${maxBlocks} blocks = ${maxBlocks * 32} KB). Lower Quality or FPS!`, 'log-err');
+    } else {
+      statBlocksEl.style.background = '';
+      statBlocksEl.textContent = `${nblocks} / ${maxBlocks} Blocks (${nblocks * 32} KB Flash)`;
+      log(`ICL package created: ${preparedIcl.length} bytes, ${records.length} unique frames at ${targetFps} FPS (synced to 1x real-time on ${displayFps} FPS display, 256 icons table), ${nblocks} blocks.`, 'log-ok');
+    }
+    updateUIState();
+  } catch (e) {
+    preparedIcl = null;
+    updateUIState();
+    log('Processing error: ' + e.message, 'log-err');
+    alert('Failed to process media: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Process & Build DWIN ICL Package';
+  }
+}
+
+function extractImageFrame(file, tw, th, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = tw; c.height = th;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, tw, th);
+      // Fit center
+      const s = Math.min(tw / img.width, th / img.height);
+      const dw = img.width * s, dh = img.height * s;
+      ctx.drawImage(img, (tw - dw) / 2, (th - dh) / 2, dw, dh);
+      const idata = ctx.getImageData(0, 0, tw, th);
+      const rec = encodeFrame(idata.data, tw, th, quality);
+      resolve([rec]);
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function extractProfileFrames(file, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        // 1. Home Header Avatar: 48 x 36 (4:3 ratio)
+        const avatar = document.createElement('canvas');
+        avatar.width = 48; avatar.height = 36;
+        const a = avatar.getContext('2d', { willReadFrequently: true });
+        a.fillStyle = '#000';
+        a.fillRect(0, 0, 48, 36);
+        // Center-crop to 48x36
+        const scaleA = Math.max(48 / img.width, 36 / img.height);
+        const sw = 48 / scaleA, sh = 36 / scaleA;
+        const sx = (img.width - sw) / 2, sy = (img.height - sh) / 2;
+        a.drawImage(img, sx, sy, sw, sh, 0, 0, 48, 36);
+
+        // 2. Full Page View: 408 x 272 (Page 94)
+        const full = document.createElement('canvas');
+        full.width = 408; full.height = 272;
+        const f = full.getContext('2d', { willReadFrequently: true });
+        f.fillStyle = '#000'; f.fillRect(0, 0, 408, 272);
+        const scale = Math.min(408 / img.width, 272 / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        f.drawImage(img, (408 - w) / 2, (272 - h) / 2, w, h);
+        resolve([
+          encodeFrame(a.getImageData(0, 0, 48, 36).data, 48, 36, quality),
+          encodeFrame(f.getImageData(0, 0, 408, 272).data, 408, 272, quality)
+        ]);
+      } catch (e) { reject(e); }
+      finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = e => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+
+async function extractVideoFrames(file, tw, th, fps, maxFrames, quality) {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto';
+  v.src = url;
+  await new Promise(r => { v.onloadedmetadata = r; });
+
+  const duration = Math.min(v.duration || 1, maxFrames / fps);
+  const n = Math.min(maxFrames, Math.max(1, Math.round(duration * fps)));
+  const c = document.createElement('canvas');
+  c.width = tw; c.height = th;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const records = [];
+
+  for (let i = 0; i < n; i++) {
+    const t = i / fps;
+    v.currentTime = t;
+    await new Promise(r => { v.onseeked = r; });
+    // Fit video into tw x th preserving aspect ratio with clean black borders
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, tw, th);
+    const vw = v.videoWidth || tw;
+    const vh = v.videoHeight || th;
+    const s = Math.min(tw / vw, th / vh);
+    const dw = Math.round(vw * s);
+    const dh = Math.round(vh * s);
+    const dx = Math.round((tw - dw) / 2);
+    const dy = Math.round((th - dh) / 2);
+    ctx.drawImage(v, dx, dy, dw, dh);
+    const idata = ctx.getImageData(0, 0, tw, th);
+    const rec = encodeFrame(idata.data, tw, th, quality);
+    records.push(rec);
+  }
+  URL.revokeObjectURL(url);
+  return records;
+}
+
+// -----------------------------------------------------------------------------
+// DWV STREAMING TO DISPLAY MEMORY (main.py Direct Flash Protocol)
+// -----------------------------------------------------------------------------
+async function uploadToDisplay() {
+  if (!port || !preparedIcl) return;
+  const sel = document.getElementById('targetMemory');
+  const opt = sel.options[sel.selectedIndex];
+  const firstBlock = parseInt(opt.dataset.block);
+  const maxBlocks = parseInt(opt.dataset.maxBlocks || (opt.value.startsWith('anim') ? 8 : 120));
+  const BLOCK = 32768;
+  const nblocks = Math.ceil(preparedIcl.length / BLOCK);
+
+  if (nblocks > maxBlocks) {
+    alert(`Package is too large for this slot! It needs ${nblocks} blocks (${nblocks * 32} KB), but this memory slot only has ${maxBlocks} blocks (${maxBlocks * 32} KB). Please reduce Quality slider or FPS.`);
+    return;
+  }
+
+  isBusy = true;
+  updateUIState();
+  const pWrap = document.getElementById('progressWrap');
+  const pFill = document.getElementById('progressFill');
+  const pPct = document.getElementById('progressPercent');
+  const pBlocks = document.getElementById('progressBlocks');
+  const pSpeed = document.getElementById('progressSpeed');
+  pWrap.style.display = 'block';
+
+  const startTime = Date.now();
+  let bytesSent = 0;
+
+  try {
+    log(`Starting DWV flash write: First Block ${firstBlock}, ${nblocks} blocks total (${preparedIcl.length} bytes)...`, 'log-cmd');
+    
+    // Handshake
+    let p = waitFor(/^DWV:(READY|ERR)/, 15000);
+    await sendSerial(`@@DWV:${firstBlock}:${nblocks}\n`);
+    let r = await p;
+    if (!r.startsWith('DWV:READY')) throw new Error('Board refused start: ' + r);
+
+    // Schedule blocks: 1..N-1 first, header block 0 LAST for atomicity!
+    const order = [];
+    for (let b = 1; b < nblocks; b++) order.push(b);
+    order.push(0);
+
+    for (let i = 0; i < order.length; i++) {
+      const b = order[i];
+      const blk = preparedIcl.subarray(b * BLOCK, Math.min(preparedIcl.length, (b + 1) * BLOCK));
+      let ok = false;
+
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        // Stream in 4096-byte hex chunks
+        for (let s = 0; s < blk.length; s += 4096) {
+          const chunk = blk.subarray(s, s + 4096);
+          p = waitFor(/^DWV:(NEXT|ERR)/, 15000);
+          await sendSerial(toHex(chunk) + '\n');
+          r = await p;
+          if (!r.startsWith('DWV:NEXT')) {
+            log(`Chunk retry block ${b} attempt ${attempt+1}...`, 'log-warn');
+            break;
+          }
+          bytesSent += chunk.length;
+          const elapsedSec = (Date.now() - startTime) / 1000;
+          const speed = (bytesSent / 1024 / elapsedSec).toFixed(1);
+          pSpeed.textContent = `${speed} KB/s`;
+        }
+        // Commit block & check CRC
+        p = waitFor(/^DWV:(OK|ERR)/, 15000);
+        const blkCrc = crc32(blk);
+        await sendSerial(`@@DWB:${b}:${blkCrc}\n`);
+        const rep = await p;
+        ok = rep.startsWith('DWV:OK');
+      }
+
+      if (!ok) throw new Error(`Block ${b} write failed after 3 attempts`);
+      
+      const pct = Math.round(((i + 1) / order.length) * 100);
+      pFill.style.width = pct + '%';
+      pPct.textContent = pct + '%';
+      pBlocks.textContent = `Block ${i + 1} / ${order.length} (Flash #${firstBlock + b})`;
+      log(`DWV: Block ${b} verified & burned into DWIN Flash #${firstBlock + b}.`, 'log-ok');
+    }
+
+    // Finish transfer
+    p = waitFor(/^DWV:DONE/, 15000);
+    await sendSerial('@@DWV:END\n');
+    await p;
+
+    const totalSec = ((Date.now() - startTime) / 1000).toFixed(1);
+    log(`Flash write complete! Total time: ${totalSec}s. Header block burned last.`, 'log-ok');
+    alert(`Success! Media flashed to DWIN display memory in ${totalSec} seconds.\nDisplay memory is permanently updated.`);
+  } catch (e) {
+    log('Upload error: ' + e.message, 'log-err');
+    alert('Flash upload error: ' + e.message);
+  } finally {
+    isBusy = false;
+    updateUIState();
+  }
+}
+
+async function sendDisplayPageJump() {
+  const sel = document.getElementById('targetMemory');
+  const opt = sel.options[sel.selectedIndex];
+  const targetPage = parseInt(opt.dataset.page || 10);
+  if (!port) { alert('Connect serial port first.'); return; }
+  try {
+    log(`Switching display to Page ${targetPage}...`, 'log-cmd');
+    // DGUS II page switch frame over UART3 via MicroPython command or raw packet:
+    // 5A A5 04 82 00 84 5A 01 00 <page>
+    const code = `import dwin_screen as dw\ndw.dwin_page(${targetPage})\n`;
+    await sendSerial(code);
+    log(`Display switched to Page ${targetPage}.`, 'log-ok');
+  } catch (e) {
+    log('Page switch error: ' + e.message, 'log-err');
+  }
+}
+
+async function softResetBoard() {
+  if (!port) { alert('Connect serial port first.'); return; }
+  try {
+    log('Sending SOFT_RESET to board...', 'log-cmd');
+    await sendSerial('SOFT_RESET\n');
+  } catch (e) {
+    log('Reset error: ' + e.message, 'log-err');
+  }
+}
+
+function updateUIState() {
+  const on = !!port;
+  document.getElementById('btnUpload').disabled = !on || !preparedIcl || isBusy;
+}
+
+// Drag & drop handlers
+const dz = document.getElementById('dropZone');
+['dragenter', 'dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('dragover'); }));
+dz.addEventListener('drop', ev => {
+  if (ev.dataTransfer.files && ev.dataTransfer.files[0]) handleFileSelected(ev.dataTransfer.files[0]);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,4559 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Teachable Machine - Voice Pro</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f111a;
+  --bg2: #161824;
+  --border: #24293e;
+  --text: #f0f4fc;
+  --muted: #8c9bb4;
+  --blue: #2f69ff;
+  --blue-hover: #1b53e0;
+  --green: #00e676;
+  --red: #ff3d00;
+  --red-hover: #dd3300;
+  --orange: #ff9100;
+  --shadow: rgba(0, 0, 0, 0.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Outfit', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  height: 100%;
+  overflow: hidden;
+}
+.header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 20px var(--shadow);
+}
+.logo {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo span {
+  background: linear-gradient(135deg, #2f69ff, #00e676);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.logo-icon {
+  font-size: 24px;
+}
+.app {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  height: calc(100vh - 61px);
+  gap: 1px;
+  background: var(--border);
+}
+.panel {
+  background: var(--bg2);
+  padding: 28px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.panel-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #fff;
+  border-left: 4px solid var(--blue);
+  padding-left: 10px;
+}
+.section {
+  margin-bottom: 24px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}
+.class-block {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.class-block:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+.class-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.class-name {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  color: #fff;
+  outline: none;
+  border-bottom: 1px dashed transparent;
+  transition: 0.2s;
+}
+.class-name:focus {
+  border-bottom-color: var(--blue);
+}
+.class-count {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  background: rgba(255,255,255,0.05);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.class-count.warn {
+  color: var(--orange);
+  background: rgba(255,145,0,0.1);
+}
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.sample-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+.sample-thumb:hover {
+  transform: scale(1.08);
+  filter: brightness(1.2);
+}
+.sample-delete {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  background: var(--red);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  transition: 0.2s;
+  z-index: 10;
+}
+.sample-delete:hover {
+  background: var(--red-hover);
+  transform: scale(1.15);
+}
+.class-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn {
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: 0.2s;
+  outline: none;
+}
+.btn:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: var(--muted);
+}
+.btn-primary {
+  background: var(--blue);
+  color: #fff;
+  border: none;
+}
+.btn-primary:hover {
+  background: var(--blue-hover);
+}
+.btn-danger {
+  background: rgba(255, 61, 0, 0.1);
+  color: var(--red);
+  border: 1px solid rgba(255, 61, 0, 0.2);
+}
+.btn-danger:hover {
+  background: rgba(255, 61, 0, 0.2);
+}
+.add-class-btn {
+  width: 100%;
+  padding: 14px;
+  border: 2px dashed var(--border);
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  transition: 0.2s;
+  margin-top: 10px;
+}
+.add-class-btn:hover {
+  border-color: var(--blue);
+  background: rgba(47, 105, 255, 0.05);
+}
+.mic-selector {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #1c1f2f;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+}
+.record-btn {
+  width: 100%;
+  padding: 14px;
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 10px;
+  transition: 0.2s;
+}
+.record-btn:hover {
+  background: var(--blue-hover);
+}
+.record-btn.active {
+  background: var(--red);
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 61, 0, 0.4); }
+  70% { box-shadow: 0 0 0 12px rgba(255, 61, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 61, 0, 0); }
+}
+.training-status {
+  text-align: center;
+  padding: 20px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 24px;
+}
+.status-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--green);
+  margin-bottom: 12px;
+}
+.advanced-btn {
+  width: 100%;
+  padding: 10px 0;
+  background: transparent;
+  border: none;
+  color: var(--blue);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  outline: none;
+}
+.advanced-content {
+  display: none;
+  margin-top: 10px;
+  padding: 12px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.advanced-content.open {
+  display: block;
+}
+.control {
+  margin-bottom: 10px;
+}
+.control-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+.control-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #1c1f2f;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.preview-waveform, .spectrum {
+  width: 100%;
+  height: 90px;
+  background: #131520;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.output-section {
+  margin-top: 20px;
+}
+.output-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 12px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 8px;
+  border-left: 4px solid var(--blue);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--blue);
+}
+.output-label {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 80px;
+}
+.output-bar {
+  flex: 1;
+  height: 20px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+  margin: 0 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.output-fill {
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.1s ease-out;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  font-size: 10px;
+  color: #fff;
+  font-weight: 700;
+}
+.output-pct {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 45px;
+  text-align: right;
+}
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.switch input { display: none; }
+.switch-slider {
+  width: 40px;
+  height: 22px;
+  background: #24293e;
+  border-radius: 11px;
+  transition: 0.3s;
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+}
+.switch input:checked+.switch-slider {
+  background: var(--blue);
+}
+.switch-slider::after {
+  content: '';
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: 0.3s;
+  display: block;
+}
+.switch input:checked+.switch-slider::after {
+  transform: translateX(18px);
+}
+.train-btn {
+  width: 100%;
+  padding: 14px;
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: 0.2s;
+}
+.train-btn:hover {
+  background: var(--blue-hover);
+}
+.train-btn:disabled {
+  background: #24293e;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  margin: 10px 0;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+  width: 0%;
+  transition: width 0.1s linear;
+}
+.export-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--green);
+  color: #0f111a;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  transition: 0.2s;
+}
+.export-btn:hover {
+  filter: brightness(1.1);
+}
+.log {
+  font-family: monospace;
+  font-size: 10px;
+  background: #090a10;
+  padding: 12px;
+  border-radius: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  color: var(--muted);
+  line-height: 1.5;
+  border: 1px solid var(--border);
+}
+.extractor-modal {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(10, 11, 20, 0.85);
+  backdrop-filter: blur(12px);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.extractor-content {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  width: 95%;
+  max-width: 1000px;
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.extractor-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.extractor-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  overflow: hidden;
+  height: calc(100% - 130px);
+}
+.extractor-left {
+  padding: 24px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.extractor-right {
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.extractor-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: rgba(0,0,0,0.1);
+}
+.waveform-container {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  background: #10111a;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.waveform-canvas-full {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.slice-overlay {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(47, 105, 255, 0.25);
+  border-left: 2px solid var(--blue);
+  border-right: 2px solid var(--blue);
+  pointer-events: none;
+}
+.scrubber-slider {
+  width: 100%;
+  margin-top: 8px;
+  -webkit-appearance: none;
+  background: var(--border);
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+}
+.scrubber-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--blue);
+  cursor: pointer;
+  transition: 0.1s;
+}
+.scrubber-slider::-webkit-slider-thumb:hover {
+  background: #fff;
+  box-shadow: 0 0 10px var(--blue);
+}
+.extractor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 4px;
+}
+</style>
+</head>
+<body>
+
+<style>
+.mode-switch {
+  display: flex;
+  background: #1a1b26;
+  border-radius: 8px;
+  padding: 4px;
+  gap: 4px;
+}
+.mode-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.mode-btn.active {
+  background: var(--primary);
+  color: white;
+}
+</style>
+
+<div class="header">
+  <div class="logo">
+    <span class="logo-icon">🦾</span>
+    <span id="header-title">Universal Teachable Machine Pro</span>
+  </div>
+  <div class="mode-switch">
+    <button class="mode-btn active" id="mode-voice-btn" onclick="setMode('VOICE')">🎙️ Voice AI</button>
+    <button class="mode-btn" id="mode-pose-btn" onclick="setMode('POSE')">🧍 Pose AI</button>
+    <button class="mode-btn" id="mode-image-btn" onclick="setMode('IMAGE')">🖼️ Image AI</button>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- PANEL 1: TRAINING DATA -->
+  <div class="panel">
+    <div class="panel-title">Gather Training Data</div>
+    
+    <div id="voice-mode-ui">
+      <div class="section">
+        <div class="section-label">Microphone Input</div>
+        <select class="mic-selector" id="mic-select" onchange="selectMic()">
+          <option>Default Microphone</option>
+        </select>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Recording Config</div>
+        <div class="control-label" style="margin-bottom:6px">Target Clip Duration</div>
+        <select class="mic-selector" id="duration-select" onchange="updateDuration()">
+          <option value="1">1.0 Second</option>
+          <option value="1.5" selected>(Recommended) 1.5 Seconds</option>
+          <option value="2">2.0 Seconds</option>
+          <option value="5">5.0 Seconds</option>
+          <option value="10">10.0 Seconds</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="pose-mode-ui" style="display:none">
+      <div class="section">
+        <div class="section-label">Webcam Input (Pose)</div>
+        <select class="mic-selector" id="cam-select" onchange="startCamera()"></select>
+      </div>
+      <div class="section">
+        <div class="video-container" style="position:relative; width:100%; aspect-ratio:4/3; background:#10111a; border-radius:8px; overflow:hidden; border: 1px solid var(--border);">
+          <video id="video" autoplay playsinline style="width:100%; height:100%; object-fit:cover; transform:scaleX(-1);"></video>
+          <canvas id="video-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; transform:scaleX(-1);"></canvas>
+        </div>
+        <div id="cam-status" style="margin-top:8px; font-size:12px; color:var(--text-dim);">Initializing MoveNet...</div>
+      </div>
+    </div>
+
+    <div id="image-mode-ui" style="display:none">
+      <div class="section">
+        <div class="section-label">Webcam Input (Image)</div>
+        <select class="mic-selector" id="img-cam-select" onchange="startImageCamera()"></select>
+      </div>
+      <div class="section">
+        <div class="video-container" style="position:relative; width:100%; aspect-ratio:4/3; background:#10111a; border-radius:8px; overflow:hidden; border: 1px solid var(--border);">
+          <video id="img-video" autoplay playsinline style="width:100%; height:100%; object-fit:cover; transform:scaleX(-1);"></video>
+          <canvas id="img-canvas" width="48" height="48" style="position:absolute; top:8px; right:8px; width:48px; height:48px; border: 1px solid var(--blue); transform:scaleX(-1); background:#000;"></canvas>
+        </div>
+        <div id="img-cam-status" style="margin-top:8px; font-size:12px; color:var(--text-dim);">Ready for Image Capture (48x48 Grayscale)</div>
+      </div>
+    </div>
+    
+    <div style="flex:1" id="classes-section"></div>
+    
+    <button class="add-class-btn" onclick="addClass()">+ Add a class</button>
+  </div>
+  
+  <!-- PANEL 2: TRAINING -->
+  <div class="panel">
+    <div class="panel-title">Train Model</div>
+    
+    <div class="training-status">
+      <div class="status-text" id="status-text">Ready to Train</div>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+    </div>
+    
+    <div class="section">
+      <div class="section-label">Epochs</div>
+      <input id="epochs" type="number" class="control-input" value="100" min="20" max="300">
+    </div>
+    
+    <div class="section">
+      <div class="section-label">Learning Rate</div>
+      <input id="lr" type="number" class="control-input" value="0.0005" min="0.0001" max="0.01" step="0.0001">
+    </div>
+    
+    <button class="train-btn" id="train-btn" onclick="trainModel()">Train Network</button>
+    
+    <button class="advanced-btn" onclick="toggleAdvanced()">
+      <span>Advanced Parameters</span>
+      <span id="adv-icon">▼</span>
+    </button>
+    
+    <div class="advanced-content" id="adv-content">
+      <div class="control">
+        <div class="control-label">Model Architecture</div>
+        <select id="unified-arch" class="control-input" style="font-family: inherit;">
+          <optgroup label="Deployable to MCU (USB WebSerial + .bin)">
+            <option value="sedscnn" selected>SE-DS-CNN — Best overall (recommended)</option>
+            <option value="sedscnn_kws">SE-DS-CNN KWS — Keyword spotting variant</option>
+            <option value="dscnn">DS-CNN — Lightweight microcontroller baseline</option>
+            <option value="tcresnet">TC-ResNet8 — Temporal residual network</option>
+            <option value="matchboxnet">MatchboxNet — 1D multi-scale depthwise</option>
+          </optgroup>
+          <optgroup label="Browser Training Only (.bin download)">
+            <option value="resnetse">ResNet-SE — Deep residual + channel attention</option>
+            <option value="xvector">X-Vector — TDNN-style speaker embedding</option>
+            <option value="ecapa">ECAPA — Channel attention aggregation</option>
+            <option value="multihead">MultiHead — Shared backbone + dual heads</option>
+            <option value="yamnet">YAMNet — Google transfer learning backbone</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="control">
+        <div class="control-label">Batch Size</div>
+        <input id="batch" type="number" class="control-input" value="4" min="2" max="16">
+      </div>
+      <div class="control">
+        <div class="control-label">Dropout Rate</div>
+        <input id="dropout" type="number" class="control-input" value="0.3" min="0" max="0.5" step="0.1">
+      </div>
+      <div class="control">
+        <div class="control-label">Noise Gate Threshold (RMS)</div>
+        <input id="noise-gate" type="range" class="control-input" min="0.0" max="0.1" step="0.002" value="0.015" oninput="updateNoiseGateVal(this.value)">
+        <span id="noise-gate-val" style="font-size:11px;color:var(--muted)">0.015 (Filters AC/room hums)</span>
+      </div>
+    </div>
+    
+    <div class="log" id="logbox" style="margin-top:20px;display:none"></div>
+  </div>
+  
+  <!-- PANEL 3: PREVIEW & EXPORT -->
+  <div class="panel">
+    <div class="panel-title">Preview & Export</div>
+    
+    <div class="section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="section-label" style="margin:0">Continuous Preview</div>
+        <label class="switch">
+          <input type="checkbox" id="input-toggle" onchange="toggleInput()">
+          <div class="switch-slider"></div>
+        </label>
+      </div>
+      
+      <button class="record-btn" id="preview-btn" onclick="startPreview()">▶ Start Continuous Preview</button>
+      <button class="record-btn" id="stop-btn" style="display:none;background:var(--orange)" onclick="stopPreview()">⏹ Stop Preview</button>
+    </div>
+    
+    <div style="position:relative;margin-bottom:12px">
+      <canvas id="waveform-canvas" class="preview-waveform" style="display:block"></canvas>
+      <div style="position:absolute;top:8px;left:8px;font-size:10px;font-weight:600;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Time Domain Waveform</div>
+    </div>
+
+    <div style="position:relative;margin-bottom:12px">
+      <canvas id="spectrum-canvas" class="spectrum" style="display:block"></canvas>
+      <div style="position:absolute;top:8px;left:8px;font-size:10px;font-weight:600;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Log Frequency Spectrogram</div>
+    </div>
+    
+    <div class="output-section" id="output-section" style="display:none">
+      <div class="section-label">Output Probabilities</div>
+      <div id="output-bars"></div>
+    </div>
+    
+    <div class="section" style="margin-top:24px;display:none" id="export-section">
+      <div class="section-label">Deploy Model</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <button class="export-btn" onclick="downloadZIP()">📥 Export C++ Arduino Model</button>
+        <button class="export-btn" style="background:var(--blue);color:#fff" onclick="downloadBin()">📥 Download Model (.bin)</button>
+        <button class="export-btn" style="grid-column: span 2; background:var(--green); color:#fff; display:flex; justify-content:center; align-items:center; gap:8px;" onclick="connectAndUploadSerial()" id="usb-deploy-btn">🚀 Deploy to Device (USB WebSerial)</button>
+      </div>
+      <!-- WebSerial Monitor -->
+      <div style="margin-top:12px; background:#0e1620; border-radius:6px; padding:8px; border:1px solid rgba(255,255,255,0.1)">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+          <span style="font-size:12px; color:#8c9bb4; font-weight:600; text-transform:uppercase">Live Serial Monitor</span>
+          <span id="serial-status" style="font-size:12px; color:var(--red)">Disconnected</span>
+        </div>
+        <pre id="serial-log" style="margin:0; background:transparent; padding:0; height:120px; overflow-y:auto; color:#a2ff9e; font-size:13px; font-family:monospace"></pre>
+        <progress id="serial-progress" value="0" max="100" style="width:100%; height:4px; margin-top:8px; display:none; accent-color:var(--green)"></progress>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- AUDIO SLICER / EXTRACTOR MODAL -->
+<div id="extractor-modal" class="extractor-modal">
+  <div class="extractor-content">
+    <div class="extractor-header">
+      <h3 style="font-size: 18px; font-weight: 600; color: #fff;" id="modal-header-title">✂️ Interactive Audio Slicer & Extractor</h3>
+      <button class="btn btn-danger" style="padding: 4px 10px; font-size: 16px; border-radius: 50%" onclick="closeExtractorModal()">×</button>
+    </div>
+    <div class="extractor-body">
+      <!-- Left side: Source audio, waveform visualizer, scrubber and controls -->
+      <div class="extractor-left">
+        <div>
+          <div class="section-label">1. Capture Source Audio</div>
+          <div style="display: flex; gap: 12px; margin-top: 8px;">
+            <button class="btn btn-primary" id="modal-rec-btn" style="flex: 1.2; padding: 12px; background: var(--blue)" onclick="toggleModalRecord()">🎤 Record 20 Seconds</button>
+            <button class="btn" style="flex: 1; padding: 12px; color: var(--blue); border-color: var(--blue)" onclick="document.getElementById('modal-file-input').click()">📂 Upload Audio File</button>
+            <input type="file" id="modal-file-input" accept="audio/*" style="display: none;" onchange="handleModalFileUpload(event)">
+          </div>
+        </div>
+        
+        <div>
+          <div class="section-label">2. Interactive Waveform</div>
+          <div class="waveform-container" style="margin-top: 8px;">
+            <canvas id="modal-waveform-canvas" class="waveform-canvas-full"></canvas>
+            <div id="modal-slice-overlay" class="slice-overlay"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span id="modal-time-display" style="font-size: 12px; color: var(--muted); font-family: monospace;">00:00 / 00:00</span>
+            <span id="modal-slice-info" style="font-size: 12px; color: var(--green); font-weight: 600;">Slice: 0.0s - 1.5s</span>
+          </div>
+          <input type="range" id="modal-scrubber" class="scrubber-slider" min="0" max="100" value="0" oninput="updateModalScrubber()">
+        </div>
+        
+        <div style="display: flex; gap: 12px;">
+          <button class="btn" id="modal-play-btn" style="flex: 1; padding: 12px; font-size: 14px;" onclick="playModalSlice()">▶ Play Selected Slice</button>
+          <button class="btn btn-primary" id="modal-extract-btn" style="flex: 1; padding: 12px; font-size: 14px; background: var(--green); color: #0f111a;" onclick="extractModalSlice()">Extract Sample</button>
+        </div>
+      </div>
+      
+      <!-- Right side: Extracted clips for current class -->
+      <div class="extractor-right">
+        <div class="section-label" id="modal-right-title">Extracted Samples / 20 minimum</div>
+        <div class="extractor-grid" id="modal-extracted-grid">
+          <!-- Dynamically populated thumbnails -->
+        </div>
+      </div>
+    </div>
+    <div class="extractor-footer">
+      <button class="btn" onclick="closeExtractorModal()">Cancel</button>
+      <button class="btn btn-primary" style="background: var(--blue)" onclick="saveExtractedClips()">💾 Save Extracted Samples</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+let appMode = 'VOICE'; // 'VOICE', 'POSE', or 'IMAGE'
+
+// ======================= IMAGE CLASSIFIER LOGIC =======================
+let imgVideo = document.getElementById('img-video');
+let imgCanvas = document.getElementById('img-canvas');
+let imgCtx = imgCanvas ? imgCanvas.getContext('2d', { willReadFrequently: true }) : null;
+let isImgWebcamReady = false;
+let latestImageArray = null; // 48x48 float array
+let imgSmoothedScores = null;
+let imgGatherInterval = null;
+
+async function initImageCamera() {
+  document.getElementById('img-cam-status').textContent = 'Loading Camera...';
+  try {
+    // Request permission first
+    const initStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    initStream.getTracks().forEach(t => t.stop());
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+    const select = document.getElementById('img-cam-select');
+    select.innerHTML = '';
+    videoDevices.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || 'Camera ' + (select.length + 1);
+      select.appendChild(opt);
+    });
+    if (videoDevices.length > 0) startImageCamera();
+  } catch (err) {
+    document.getElementById('img-cam-status').textContent = 'Camera permission denied!';
+  }
+}
+
+async function startImageCamera() {
+  if (imgVideo && imgVideo.srcObject) {
+    imgVideo.srcObject.getTracks().forEach(t => t.stop());
+  }
+  const deviceId = document.getElementById('img-cam-select').value;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: 320, height: 240 }
+    });
+    imgVideo.srcObject = stream;
+    imgVideo.onloadedmetadata = () => {
+      isImgWebcamReady = true;
+      document.getElementById('img-cam-status').textContent = 'Image Camera Ready (48x48 Grayscale)';
+      captureImageFrame();
+    };
+  } catch (e) {
+    document.getElementById('img-cam-status').textContent = 'Failed to start camera: ' + e.message;
+  }
+}
+
+function stopImageCamera() {
+  if (imgVideo && imgVideo.srcObject) {
+    imgVideo.srcObject.getTracks().forEach(t => t.stop());
+    imgVideo.srcObject = null;
+  }
+  isImgWebcamReady = false;
+}
+
+function captureImageFrame() {
+  if (!isImgWebcamReady || appMode !== 'IMAGE') return;
+  
+  if (imgCtx && imgVideo) {
+    const size = Math.min(imgVideo.videoWidth, imgVideo.videoHeight);
+    const sx = (imgVideo.videoWidth - size) / 2;
+    const sy = (imgVideo.videoHeight - size) / 2;
+    
+    imgCtx.drawImage(imgVideo, sx, sy, size, size, 0, 0, 48, 48);
+    
+    const imgData = imgCtx.getImageData(0, 0, 48, 48);
+    latestImageArray = new Float32Array(48 * 48);
+    for (let i = 0; i < 48 * 48; i++) {
+      const r = imgData.data[i * 4];
+      const g = imgData.data[i * 4 + 1];
+      const b = imgData.data[i * 4 + 2];
+      const gray = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+      latestImageArray[i] = gray;
+      
+      const gVal = Math.floor(gray * 255);
+      imgData.data[i * 4] = gVal;
+      imgData.data[i * 4 + 1] = gVal;
+      imgData.data[i * 4 + 2] = gVal;
+    }
+    imgCtx.putImageData(imgData, 0, 0);
+    
+    if (previewActive && model && latestImageArray) {
+      tf.tidy(() => {
+        const inputTensor = tf.tensor3d(latestImageArray, [48, 48, 1]).expandDims(0);
+        const pred = model.predict(inputTensor);
+        const scores = pred.dataSync();
+        
+        if (!imgSmoothedScores) imgSmoothedScores = Array.from(scores);
+        for (let i = 0; i < scores.length; i++) {
+          imgSmoothedScores[i] = imgSmoothedScores[i] * 0.75 + scores[i] * 0.25;
+        }
+        
+        for (let i = 0; i < classes.length; i++) {
+          const valEl = document.getElementById('val' + i);
+          const barEl = document.getElementById('bar' + i);
+          const pct = Math.round(imgSmoothedScores[i] * 100);
+          if (valEl) valEl.textContent = pct + '%';
+          if (barEl) barEl.style.width = pct + '%';
+        }
+      });
+    }
+  }
+  
+  requestAnimationFrame(captureImageFrame);
+}
+
+function startImageGathering(i) {
+  if (imgGatherInterval) return;
+  
+  const btn = document.getElementById(`rec-btn-${i}`);
+  if (btn) { btn.style.background = 'var(--red)'; btn.style.color = '#fff'; btn.textContent = '📸 Recording...'; }
+  
+  imgGatherInterval = setInterval(() => {
+    if (latestImageArray) {
+      classes[i].images.push(latestImageArray);
+      renderClasses();
+      const btn2 = document.getElementById(`rec-btn-${i}`);
+      if (btn2) { btn2.style.background = 'var(--red)'; btn2.style.color = '#fff'; btn2.textContent = '📸 Recording...'; }
+    }
+  }, 100);
+}
+
+function stopImageGathering() {
+  clearInterval(imgGatherInterval);
+  imgGatherInterval = null;
+  renderClasses();
+}
+
+function imageArrayToDataURL(arr) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 48;
+  canvas.height = 48;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(48, 48);
+  for (let i = 0; i < 48 * 48; i++) {
+    const val = Math.floor(arr[i] * 255);
+    const idx = i * 4;
+    imgData.data[idx] = val;
+    imgData.data[idx+1] = val;
+    imgData.data[idx+2] = val;
+    imgData.data[idx+3] = 255;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return canvas.toDataURL();
+}
+
+function setMode(mode) {
+  if (classes.length > 0 && classes.some(c => (c.clips && c.clips.length > 0) || (c.poses && c.poses.length > 0) || (c.images && c.images.length > 0))) {
+    if (!confirm("Switching modes will clear your current training data. Continue?")) return;
+  }
+  
+  appMode = mode;
+  model = null;
+  tflBuf = null;
+  document.getElementById('export-section').style.display = 'none';
+  document.getElementById('status-text').textContent = 'Ready to Train';
+  document.getElementById('status-text').style.color = 'var(--text)';
+  
+  document.getElementById('mode-voice-btn').classList.toggle('active', mode === 'VOICE');
+  document.getElementById('mode-pose-btn').classList.toggle('active', mode === 'POSE');
+  document.getElementById('mode-image-btn').classList.toggle('active', mode === 'IMAGE');
+  
+  document.getElementById('voice-mode-ui').style.display = mode === 'VOICE' ? 'block' : 'none';
+  document.getElementById('pose-mode-ui').style.display = mode === 'POSE' ? 'block' : 'none';
+  document.getElementById('image-mode-ui').style.display = mode === 'IMAGE' ? 'block' : 'none';
+  
+  const colors = ['#2f69ff', '#ff3d00', '#00e676', '#ff9100', '#ab47bc', '#e91e63'];
+  if (mode === 'POSE') {
+    stopImageCamera();
+    classes = [
+      { name: 'Pose_1', clips: [], poses: [], images: [], color: colors[0] },
+      { name: 'Pose_2', clips: [], poses: [], images: [], color: colors[1] }
+    ];
+    initPoseDetection();
+  } else if (mode === 'IMAGE') {
+    stopCamera();
+    classes = [
+      { name: 'Object_A', clips: [], poses: [], images: [], color: colors[0] },
+      { name: 'Object_B', clips: [], poses: [], images: [], color: colors[1] }
+    ];
+    initImageCamera();
+  } else {
+    stopCamera();
+    stopImageCamera();
+    classes = [
+      { name: 'Background_Noise', clips: [], poses: [], images: [], color: '#8c9bb4' },
+      { name: 'Command_ON', clips: [], poses: [], images: [], color: '#00e676' },
+      { name: 'Command_OFF', clips: [], poses: [], images: [], color: '#ff3d00' }
+    ];
+  }
+  renderClasses();
+}
+
+// ======================= POSE DETECTION LOGIC =======================
+let detector = null;
+let video = document.getElementById('video');
+let canvas = document.getElementById('video-canvas');
+let ctx = canvas ? canvas.getContext('2d') : null;
+let isWebcamReady = false;
+let lastExtractedFeatures = null;
+let poseSmoothedScores = null;
+let latestPoseImageArray = null;
+let poseCapCanvas = null;
+
+async function initPoseDetection() {
+  if (detector) {
+    getCameras(); // Already loaded
+    return;
+  }
+  document.getElementById('cam-status').textContent = 'Loading MoveNet...';
+  try {
+    await tf.setBackend('webgl');
+    detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+    });
+    document.getElementById('cam-status').textContent = 'MoveNet loaded! Requesting camera permission...';
+    await getCameras();
+  } catch (e) {
+    document.getElementById('cam-status').textContent = 'Error loading MoveNet: ' + e.message;
+  }
+}
+
+async function getCameras() {
+  try {
+    // ⚠️ CRITICAL FIX: Request a generic camera stream FIRST so the browser grants permission. 
+    // Without this, enumerateDevices() returns empty labels and fails!
+    const initStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    initStream.getTracks().forEach(t => t.stop()); // Stop the dummy stream immediately
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+    const select = document.getElementById('cam-select');
+    select.innerHTML = '';
+    videoDevices.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || 'Camera ' + (select.length + 1);
+      select.appendChild(opt);
+    });
+    if(videoDevices.length > 0) startCamera();
+  } catch (err) {
+    document.getElementById('cam-status').textContent = 'Camera permission denied!';
+  }
+}
+
+async function startCamera() {
+  if (video && video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+  }
+  const deviceId = document.getElementById('cam-select').value;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: 320, height: 240 }
+    });
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      isWebcamReady = true;
+      document.getElementById('cam-status').textContent = 'Camera Ready';
+      detectFrame();
+    };
+  } catch(e) {
+    document.getElementById('cam-status').textContent = 'Failed to start camera: ' + e.message;
+  }
+}
+
+function stopCamera() {
+  if (video && video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+  isWebcamReady = false;
+}
+
+async function detectFrame() {
+  if (!isWebcamReady || !detector || appMode !== 'POSE') {
+    if(appMode === 'POSE') requestAnimationFrame(detectFrame);
+    return;
+  }
+
+  // Capture 48×48 grayscale frame for CNN training data and live inference
+  if (!poseCapCanvas) { poseCapCanvas = document.createElement('canvas'); poseCapCanvas.width = 48; poseCapCanvas.height = 48; }
+  if (video.videoWidth > 0) {
+    const pcCtx = poseCapCanvas.getContext('2d');
+    const sz = Math.min(video.videoWidth, video.videoHeight);
+    const sx = (video.videoWidth - sz) / 2;
+    const sy = (video.videoHeight - sz) / 2;
+    pcCtx.drawImage(video, sx, sy, sz, sz, 0, 0, 48, 48);
+    const pd = pcCtx.getImageData(0, 0, 48, 48);
+    latestPoseImageArray = new Float32Array(48 * 48);
+    for (let pi = 0; pi < 48 * 48; pi++) {
+      latestPoseImageArray[pi] = (0.299*pd.data[pi*4] + 0.587*pd.data[pi*4+1] + 0.114*pd.data[pi*4+2]) / 255.0;
+    }
+  }
+
+  const poses = await detector.estimatePoses(video);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (poses.length > 0) {
+    const pose = poses[0];
+    lastExtractedFeatures = extractPoseFeatures(pose);
+
+    ctx.fillStyle = 'red';
+    pose.keypoints.forEach(kp => {
+      if(kp.score > 0.3) {
+        ctx.beginPath();
+        ctx.arc(kp.x, kp.y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    });
+
+    const adjacentKeyPoints = poseDetection.util.getAdjacentPairs(poseDetection.SupportedModels.MoveNet);
+    ctx.strokeStyle = 'cyan';
+    ctx.lineWidth = 2;
+    adjacentKeyPoints.forEach(([i, j]) => {
+      const kp1 = pose.keypoints[i];
+      const kp2 = pose.keypoints[j];
+      if (kp1.score > 0.3 && kp2.score > 0.3) {
+        ctx.beginPath();
+        ctx.moveTo(kp1.x, kp1.y);
+        ctx.lineTo(kp2.x, kp2.y);
+        ctx.stroke();
+      }
+    });
+  } else {
+    lastExtractedFeatures = null;
+  }
+
+  // CNN inference on camera frame (not keypoints — works without a detected person)
+  if (previewActive && model && latestPoseImageArray) {
+    tf.tidy(() => {
+      const inputTensor = tf.tensor3d(latestPoseImageArray, [48, 48, 1]).expandDims(0);
+      const pred = model.predict(inputTensor);
+      const scores = pred.dataSync();
+      if (!poseSmoothedScores) poseSmoothedScores = Array.from(scores);
+      for (let i = 0; i < scores.length; i++) poseSmoothedScores[i] = poseSmoothedScores[i] * 0.75 + scores[i] * 0.25;
+      for (let i = 0; i < classes.length; i++) {
+        const valEl = document.getElementById('val'+i);
+        const barEl = document.getElementById('bar'+i);
+        const pct = Math.round(poseSmoothedScores[i] * 100);
+        if (valEl) valEl.textContent = pct + '%';
+        if (barEl) barEl.style.width = pct + '%';
+      }
+    });
+  }
+
+  requestAnimationFrame(detectFrame);
+}
+
+function extractPoseFeatures(pose) {
+  let features = [];
+  pose.keypoints.forEach(kp => {
+    features.push(kp.x / canvas.width);
+    features.push(kp.y / canvas.height);
+  });
+  return features;
+}
+// ======================= END POSE DETECTION =======================
+
+const SAMPLE_RATE = 16000;
+const N_FRAMES = 50;
+const N_MFCC = 64;
+const WIN_LENGTH = 512;
+
+let DURATION = 1.5; // Default 1.5 seconds (Recommended)
+let CLIP_SAMPLES = SAMPLE_RATE * DURATION;
+let HOP_LENGTH = Math.floor((CLIP_SAMPLES - WIN_LENGTH) / (N_FRAMES - 1));
+
+let classes = [], model = null, tflBuf = null;
+let noiseGateThreshold = 0.015;
+
+function updateNoiseGateVal(val) {
+  noiseGateThreshold = parseFloat(val);
+  const el = document.getElementById('noise-gate-val');
+  if (el) el.textContent = noiseGateThreshold.toFixed(3) + ' (Filters AC/room hums)';
+}
+let audioCtx = null, micStream = null, analyser = null, sourceNode = null;
+let recBuf = [], isRecording = false, recClass = -1;
+let previewActive = false, rollingBuffer = [], processor = null;
+let recStartTime = 0;
+let recTimer = null;
+let animationId = null;
+
+// Globally pre-allocated variables for zero-GC features extraction
+let prePcm = null;
+let feat = null;
+let re = null;
+let im = null;
+let hann = null;
+let filterPeaks = null;
+
+// Slicer modal variables
+let slicerClassIndex = -1;
+let slicerPcmData = null; // Float32Array of 16kHz audio source
+let slicerExtractedClips = []; // Array of Float32Arrays
+let slicerAudioSource = null;
+let slicerIsRecording = false;
+let slicerMediaRecorder = null;
+let slicerRecordInterval = null;
+let slicerMicStream = null;
+let slicerRecordSeconds = 20;
+let slicerRecordChunks = [];
+
+// Precomputed FFT Twiddle Factors for WIN_LENGTH = 512 to avoid expensive trig calculations inside loops
+const cosTable = new Float32Array(WIN_LENGTH);
+const sinTable = new Float32Array(WIN_LENGTH);
+for (let i = 0; i < WIN_LENGTH; i++) {
+  cosTable[i] = Math.cos(-2 * Math.PI * i / WIN_LENGTH);
+  sinTable[i] = Math.sin(-2 * Math.PI * i / WIN_LENGTH);
+}
+
+// Optimized Iterative Cooley-Tukey Radix-2 FFT utilizing precomputed twiddle tables
+function computeFFT(re, im) {
+  const n = re.length;
+  let j = 0;
+  for (let i = 0; i < n - 1; i++) {
+    if (i < j) {
+      let temp = re[i]; re[i] = re[j]; re[j] = temp;
+      temp = im[i]; im[i] = im[j]; im[j] = temp;
+    }
+    let m = n >> 1;
+    while (m >= 1 && j >= m) {
+      j -= m;
+      m >>= 1;
+    }
+    j += m;
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const halfSize = size >> 1;
+    const tabStep = WIN_LENGTH / size;
+    for (let i = 0; i < n; i += size) {
+      for (let k = 0; k < halfSize; k++) {
+        const idx = k * tabStep;
+        const wr = cosTable[idx];
+        const wi = sinTable[idx];
+        const pr = re[i + k + halfSize] * wr - im[i + k + halfSize] * wi;
+        const pi = re[i + k + halfSize] * wi + im[i + k + halfSize] * wr;
+        re[i + k + halfSize] = re[i + k] - pr;
+        im[i + k + halfSize] = im[i + k] - pi;
+        re[i + k] += pr;
+        im[i + k] += pi;
+      }
+    }
+  }
+}
+
+// Preallocate DSP buffers and precompute constants to avoid GC pauses
+function initDSP() {
+  prePcm = new Float32Array(CLIP_SAMPLES);
+  feat = new Float32Array(N_FRAMES * N_MFCC);
+  re = new Float32Array(WIN_LENGTH);
+  im = new Float32Array(WIN_LENGTH);
+  
+  hann = new Float32Array(WIN_LENGTH);
+  for (let i = 0; i < WIN_LENGTH; i++) {
+    hann[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (WIN_LENGTH - 1)));
+  }
+  
+  const hzToMel = (hz) => 2595 * Math.log10(1 + hz / 700);
+  const melToHz = (mel) => 700 * (10 ** (mel / 2595) - 1);
+  
+  const minHz = 0;
+  const maxHz = 8000;
+  const minMel = hzToMel(minHz);
+  const maxMel = hzToMel(maxHz);
+  const melStep = (maxMel - minMel) / (N_MFCC + 1);
+  
+  filterPeaks = new Float32Array(N_MFCC + 2);
+  for (let i = 0; i < N_MFCC + 2; i++) {
+    const mel = minMel + i * melStep;
+    const hz = melToHz(mel);
+    filterPeaks[i] = hz * WIN_LENGTH / SAMPLE_RATE;
+  }
+}
+
+// True Spectrogram Log-Mel-like Frequency Extraction with zero internal allocations
+function extractFeatures(pcm) {
+  // Pre-emphasis filter: y[t] = x[t] - 0.97 * x[t-1]
+  prePcm[0] = pcm[0];
+  for (let i = 1; i < pcm.length; i++) {
+    prePcm[i] = pcm[i] - 0.97 * pcm[i - 1];
+  }
+  
+  for (let f = 0; f < N_FRAMES; f++) {
+    const start = f * HOP_LENGTH;
+    
+    // Copy and apply Hann window
+    for (let i = 0; i < WIN_LENGTH; i++) {
+      if (start + i < prePcm.length) {
+        re[i] = prePcm[start + i] * hann[i];
+      } else {
+        re[i] = 0;
+      }
+      im[i] = 0;
+    }
+    
+    // Compute FFT
+    computeFFT(re, im);
+    
+    // Compute magnitude spectrum in-place using re to avoid new allocations
+    for (let i = 0; i < WIN_LENGTH / 2; i++) {
+      re[i] = Math.sqrt(re[i] * re[i] + im[i] * im[i]);
+    }
+    
+    // Apply overlapping Mel triangular filters
+    for (let m = 0; m < N_MFCC; m++) {
+      const fbLow = filterPeaks[m];
+      const fbCenter = filterPeaks[m + 1];
+      const fbHigh = filterPeaks[m + 2];
+      
+      let sum = 0;
+      for (let i = Math.floor(fbLow); i <= Math.ceil(fbHigh) && i < WIN_LENGTH / 2; i++) {
+        let weight = 0;
+        if (i >= fbLow && i <= fbCenter) {
+          weight = (i - fbLow) / (fbCenter - fbLow);
+        } else if (i > fbCenter && i <= fbHigh) {
+          weight = (fbHigh - i) / (fbHigh - fbCenter);
+        }
+        sum += re[i] * weight;
+      }
+      feat[f * N_MFCC + m] = Math.log(Math.max(sum, 1e-5));
+    }
+  }
+  
+  // Normalize features
+  let sum = 0;
+  for (let i = 0; i < feat.length; i++) sum += feat[i];
+  const mean = sum / feat.length;
+  
+  let varSum = 0;
+  for (let i = 0; i < feat.length; i++) varSum += (feat[i] - mean) ** 2;
+  const std = Math.sqrt(Math.max(varSum / feat.length, 1e-10));
+  
+  const normalized = new Float32Array(feat.length);
+  for (let i = 0; i < feat.length; i++) {
+    normalized[i] = (feat[i] - mean) / (std + 1e-8);
+  }
+  return normalized;
+}
+
+// Delete an individual sample from a class
+function deleteSample(classIndex, index) {
+  if (appMode === 'POSE') {
+    classes[classIndex].images.splice(index, 1);
+  } else if (appMode === 'IMAGE') {
+    classes[classIndex].images.splice(index, 1);
+  } else {
+    classes[classIndex].clips.splice(index, 1);
+  }
+  renderClasses();
+  if (model) {
+    model.dispose();
+    model = null;
+  }
+  tflBuf = null;
+  document.getElementById('export-section').style.display = 'none';
+  document.getElementById('status-text').textContent = 'Ready to Train';
+  document.getElementById('status-text').style.color = 'var(--text)';
+  log(`Deleted sample ${index + 1} from [${classes[classIndex].name}]`);
+}
+
+async function initMics() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d => d.kind === 'audioinput');
+    const select = document.getElementById('mic-select');
+    select.innerHTML = '';
+    inputs.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Microphone (${select.childNodes.length + 1})`;
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function selectMic() {
+  stopPreview();
+  micStream = null;
+}
+
+function updateDuration() {
+  const select = document.getElementById('duration-select');
+  const newDur = parseFloat(select.value);
+  if (newDur === DURATION) return;
+  
+  const hasClips = classes.some(c => c.clips.length > 0);
+  if (hasClips) {
+    if (!confirm('Changing duration will clear all recorded clips in your classes. Do you want to proceed?')) {
+      select.value = DURATION.toString();
+      return;
+    }
+    classes.forEach(c => c.clips = []);
+  }
+  DURATION = newDur;
+  CLIP_SAMPLES = SAMPLE_RATE * DURATION;
+  HOP_LENGTH = Math.floor((CLIP_SAMPLES - WIN_LENGTH) / (N_FRAMES - 1));
+  initDSP();
+  renderClasses();
+  
+  if (model) {
+    model.dispose();
+    model = null;
+  }
+  tflBuf = null;
+  document.getElementById('export-section').style.display = 'none';
+  document.getElementById('status-text').textContent = 'Ready to Train';
+  document.getElementById('status-text').style.color = 'var(--text)';
+  
+  log(`Duration set to ${DURATION} seconds. Grid dimensions are ${N_FRAMES}x${N_MFCC} (${N_FRAMES * N_MFCC} cells).`);
+}
+
+function toggleAdvanced() {
+  const c = document.getElementById('adv-content');
+  c.classList.toggle('open');
+  document.getElementById('adv-icon').textContent = c.classList.contains('open') ? '▲' : '▼';
+}
+
+function toggleInput() {
+  const chk = document.getElementById('input-toggle');
+  if (chk.checked) startPreview();
+  else stopPreview();
+}
+
+function log(msg) {
+  const b = document.getElementById('logbox');
+  b.style.display = 'block';
+  b.innerHTML += '<div>' + msg + '</div>';
+  b.scrollTop = b.scrollHeight;
+  console.log(msg);
+}
+
+function addClass() {
+  const colors = ['#2f69ff', '#ff3d00', '#00e676', '#ff9100', '#ab47bc', '#e91e63'];
+  classes.push({
+    name: `Class ${classes.length + 1}`,
+    clips: [],
+    poses: [],
+    images: [],
+    color: colors[classes.length % colors.length]
+  });
+  renderClasses();
+}
+
+function renderClasses() {
+  const s = document.getElementById('classes-section');
+  s.innerHTML = '';
+  classes.forEach((cls, i) => {
+    const isPose = appMode === 'POSE';
+    const isImage = appMode === 'IMAGE';
+    const count = (isPose || isImage) ? cls.images.length : cls.clips.length;
+    
+    let btnHtml = '';
+    let gridHtml = '';
+    
+    if (isPose) {
+      btnHtml = `<button class="btn btn-primary" id="rec-btn-${i}" style="flex:1.2;background: var(--blue)" onmousedown="startGathering(${i})" onmouseup="stopGathering()" onmouseleave="stopGathering()">📸 Hold to Record</button>`;
+      gridHtml = cls.images.map((imgArr, j) => `
+        <div class="sample-thumb" style="background-image: url(${imageArrayToDataURL(imgArr)}); background-size: cover;" title="Pose Sample ${j + 1}">
+          <div class="sample-delete" onclick="event.stopPropagation(); deleteSample(${i}, ${j})">×</div>
+        </div>`).join('');
+    } else if (isImage) {
+      btnHtml = `<button class="btn btn-primary" id="rec-btn-${i}" style="flex:1.2;background: var(--blue)" onmousedown="startImageGathering(${i})" onmouseup="stopImageGathering()" onmouseleave="stopImageGathering()">📸 Hold to Record</button>`;
+      gridHtml = cls.images.map((imgArr, j) => `
+        <div class="sample-thumb" style="background-image: url(${imageArrayToDataURL(imgArr)}); background-size: cover;" title="Image Sample ${j + 1}">
+          <div class="sample-delete" onclick="event.stopPropagation(); deleteSample(${i}, ${j})">×</div>
+        </div>`).join('');
+    } else {
+      btnHtml = `<button class="btn btn-primary" id="rec-btn-${i}" style="flex:1.2;background: var(--blue)" onclick="startRec(${i})">🎤 Record</button>
+                 <button class="btn" style="flex:1;color:var(--blue);border-color:var(--blue)" onclick="openExtractorModal(${i})" title="Load a voice audio file and slice into clips">📂 Extract</button>`;
+      gridHtml = cls.clips.map((_, j) => `
+        <div class="sample-thumb" onclick="playSample(${i},${j})" style="background: linear-gradient(135deg, ${cls.color}, ${cls.color}cc)" title="Voice Sample ${j + 1}">
+          ▶
+          <div class="sample-delete" onclick="event.stopPropagation(); deleteSample(${i}, ${j})">×</div>
+        </div>`).join('');
+    }
+
+    s.innerHTML += `
+      <div class="class-block" style="border-left: 4px solid ${cls.color}">
+        <div class="class-header">
+          <input class="class-name" value="${cls.name}" onchange="classes[${i}].name=this.value;renderClasses()" style="color: ${cls.color}">
+          <span class="class-count ${count < 5 ? 'warn' : ''}">${count}${count < 5 ? ' / 5' : ''}</span>
+        </div>
+        
+        <div style="width:100%;height:4px;background:rgba(255,255,255,0.05);border-radius:2px;margin-bottom:12px;overflow:hidden; display: ${(isPose || isImage) ? 'none' : 'block'}">
+          <div id="progress-bar-${i}" style="width:0%;height:100%;background:var(--red);transition:width 0.05s linear"></div>
+        </div>
+ 
+        <div class="sample-grid" id="grid${i}">
+          ${gridHtml}
+        </div>
+        <div class="class-actions">
+          ${btnHtml}
+          <button class="btn btn-danger" style="flex:0.5" onclick="classes.splice(${i},1);renderClasses()">×</button>
+        </div>
+      </div>`;
+  });
+}
+
+// POSE DATA GATHERING
+let gatherInterval = null;
+function startGathering(i) {
+  if (gatherInterval) return;
+  
+  const btn = document.getElementById(`rec-btn-${i}`);
+  if (btn) { btn.style.background = 'var(--red)'; btn.style.color = '#fff'; btn.textContent = '📸 Recording...'; }
+  
+  gatherInterval = setInterval(() => {
+    if (latestPoseImageArray) {
+      classes[i].images.push(new Float32Array(latestPoseImageArray));
+      renderClasses();
+      const btn2 = document.getElementById(`rec-btn-${i}`);
+      if (btn2) { btn2.style.background = 'var(--red)'; btn2.style.color = '#fff'; btn2.textContent = '📸 Recording...'; }
+    }
+  }, 100);
+}
+function stopGathering() {
+  clearInterval(gatherInterval);
+  gatherInterval = null;
+  renderClasses();
+}
+
+function playSample(i, j) {
+  try {
+    const pcm = classes[i].clips[j].pcm;
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = audioCtx.createBuffer(1, pcm.length, SAMPLE_RATE);
+    buf.getChannelData(0).set(pcm);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start(0);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function startRec(i) {
+  if (isRecording) return;
+  
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+  
+  try {
+    const deviceId = document.getElementById('mic-select').value;
+    if (!micStream || !micStream.active || micStream.deviceId !== deviceId) {
+      if (micStream) micStream.getTracks().forEach(track => track.stop());
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: (deviceId && deviceId !== 'default') ? { exact: deviceId } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      micStream.deviceId = deviceId;
+    }
+  } catch (err) {
+    alert('Could not access microphone. Error: ' + err.message + '\n\nPlease check Windows Privacy Settings or select a different microphone.');
+    return;
+  }
+  
+  recClass = i;
+  isRecording = true;
+  recBuf = [];
+  recStartTime = Date.now();
+  
+  sourceNode = audioCtx.createMediaStreamSource(micStream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  sourceNode.connect(analyser);
+  
+  startVisualizers();
+  
+  processor = audioCtx.createScriptProcessor(4096, 1, 1);
+  processor.onaudioprocess = (e) => {
+    if (isRecording) {
+      recBuf.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    }
+  };
+  sourceNode.connect(processor);
+  processor.connect(audioCtx.destination);
+  
+  const btn = document.getElementById(`rec-btn-${i}`);
+  if (btn) {
+    btn.classList.add('active');
+    btn.style.background = 'var(--red)';
+    btn.style.color = '#fff';
+  }
+  
+  recTimer = setInterval(() => {
+    const elapsed = (Date.now() - recStartTime) / 1000;
+    const progressPct = Math.min((elapsed / DURATION) * 100, 100);
+    const remaining = Math.max(DURATION - elapsed, 0).toFixed(1);
+    
+    if (btn) btn.innerHTML = `🔴 Rec ${remaining}s`;
+    
+    const progressEl = document.getElementById(`progress-bar-${i}`);
+    if (progressEl) progressEl.style.width = `${progressPct}%`;
+    
+    if (elapsed >= DURATION) {
+      clearInterval(recTimer);
+      stopRec();
+    }
+  }, 50);
+}
+
+function stopRec() {
+  if (!isRecording) return;
+  isRecording = false;
+  clearInterval(recTimer);
+  
+  stopVisualizers();
+  if (processor) processor.disconnect();
+  if (sourceNode) {
+    sourceNode.disconnect();
+    sourceNode = null;
+  }
+  // Removed micStream tear-down to prevent repeated browser permission prompts
+  
+  let total = 0;
+  for (const buf of recBuf) total += buf.length;
+  const merged = new Float32Array(total);
+  let pos = 0;
+  for (const buf of recBuf) {
+    merged.set(buf, pos);
+    pos += buf.length;
+  }
+  
+  const pcm = new Float32Array(CLIP_SAMPLES);
+  pcm.set(merged.slice(0, CLIP_SAMPLES));
+  
+  if (recClass >= 0) {
+    classes[recClass].clips.push({ pcm });
+    renderClasses();
+  }
+  
+  recBuf = [];
+  recClass = -1;
+}
+
+// Open the interactive multi-sample slicer modal
+function openExtractorModal(classIndex) {
+  slicerClassIndex = classIndex;
+  slicerPcmData = null;
+  slicerExtractedClips = [];
+  
+  document.getElementById('modal-header-title').textContent = `✂️ Slicer & Extractor for [${classes[classIndex].name}]`;
+  document.getElementById('modal-right-title').textContent = `Extracted Samples (Min 5 recommended)`;
+  document.getElementById('modal-extracted-grid').innerHTML = '';
+  document.getElementById('extractor-modal').style.display = 'flex';
+  
+  // Reset time and slice text
+  document.getElementById('modal-time-display').textContent = '00:00 / 00:00';
+  document.getElementById('modal-slice-info').textContent = `Slice: 0.0s - ${DURATION}s`;
+  
+  const scrubber = document.getElementById('modal-scrubber');
+  scrubber.value = 0;
+  scrubber.disabled = true;
+  
+  const canvas = document.getElementById('modal-waveform-canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.clientWidth * window.devicePixelRatio;
+  canvas.height = canvas.clientHeight * window.devicePixelRatio;
+  ctx.fillStyle = '#10111a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  updateModalSliceOverlay();
+}
+
+// Close the slicer modal and release resources
+function closeExtractorModal() {
+  stopModalAudio();
+  stopModalRecord();
+  document.getElementById('extractor-modal').style.display = 'none';
+}
+
+// Stop current modal preview playback
+function stopModalAudio() {
+  if (slicerAudioSource) {
+    try { slicerAudioSource.stop(); } catch (e) {}
+    slicerAudioSource = null;
+  }
+  document.getElementById('modal-play-btn').textContent = '▶ Play Selected Slice';
+}
+
+// Toggle recording within the extractor modal
+async function toggleModalRecord() {
+  if (slicerIsRecording) {
+    stopModalRecord();
+    return;
+  }
+  
+  stopModalAudio();
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+  
+  try {
+    const deviceId = document.getElementById('mic-select').value;
+    if (!slicerMicStream || !slicerMicStream.active || slicerMicStream.deviceId !== deviceId) {
+      if (slicerMicStream) slicerMicStream.getTracks().forEach(track => track.stop());
+      slicerMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      slicerMicStream.deviceId = deviceId;
+    }
+  } catch (err) {
+    alert('Could not access microphone.');
+    return;
+  }
+  
+  slicerIsRecording = true;
+  slicerRecordChunks = [];
+  slicerMediaRecorder = new MediaRecorder(slicerMicStream);
+  
+  slicerMediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) {
+      slicerRecordChunks.push(e.data);
+    }
+  };
+  
+  slicerMediaRecorder.onstop = async () => {
+    const blob = new Blob(slicerRecordChunks, { type: 'audio/webm' });
+    const arrayBuffer = await blob.arrayBuffer();
+    try {
+      const audioBuf = await audioCtx.decodeAudioData(arrayBuffer);
+      if (audioBuf.sampleRate !== SAMPLE_RATE) {
+        const offlineCtx = new OfflineAudioContext(1, Math.round(audioBuf.duration * SAMPLE_RATE), SAMPLE_RATE);
+        const src = offlineCtx.createBufferSource();
+        src.buffer = audioBuf;
+        src.connect(offlineCtx.destination);
+        src.start();
+        const rendered = await offlineCtx.startRendering();
+        slicerPcmData = rendered.getChannelData(0);
+      } else {
+        slicerPcmData = audioBuf.getChannelData(0);
+      }
+      
+      drawModalWaveform();
+      const scrubber = document.getElementById('modal-scrubber');
+      scrubber.disabled = false;
+      scrubber.max = Math.max(0, slicerPcmData.length - CLIP_SAMPLES);
+      scrubber.value = 0;
+      updateModalScrubber();
+      log(`✓ Recorded ${slicerRecordSeconds} seconds directly into the slicer waveform!`);
+    } catch (err) {
+      alert('Failed to process recorded audio: ' + err.message);
+    }
+  };
+  
+  slicerMediaRecorder.start();
+  const btn = document.getElementById('modal-rec-btn');
+  btn.textContent = `⏹ Stop (${slicerRecordSeconds}s)`;
+  btn.style.background = 'var(--red)';
+  
+  let left = slicerRecordSeconds;
+  slicerRecordInterval = setInterval(() => {
+    left--;
+    if (left <= 0) {
+      stopModalRecord();
+    } else {
+      btn.textContent = `⏹ Stop (${left}s)`;
+    }
+  }, 1000);
+}
+
+// Stop slicer recording
+function stopModalRecord() {
+  if (!slicerIsRecording) return;
+  slicerIsRecording = false;
+  
+  clearInterval(slicerRecordInterval);
+  if (slicerMediaRecorder && slicerMediaRecorder.state !== 'inactive') {
+    slicerMediaRecorder.stop();
+  }
+  // Removed slicerMicStream tear-down to prevent repeated browser permission prompts
+  
+  const btn = document.getElementById('modal-rec-btn');
+  btn.textContent = '🎤 Record 20 Seconds';
+  btn.style.background = 'var(--blue)';
+}
+
+// Handle file loading inside slicer modal
+async function handleModalFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  stopModalAudio();
+  stopModalRecord();
+  
+  log(`Decoding slicer file: "${file.name}"...`);
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+    const arrayBuffer = await file.arrayBuffer();
+    const audioBuf = await audioCtx.decodeAudioData(arrayBuffer);
+    
+    if (audioBuf.sampleRate !== SAMPLE_RATE) {
+      const offlineCtx = new OfflineAudioContext(1, Math.round(audioBuf.duration * SAMPLE_RATE), SAMPLE_RATE);
+      const src = offlineCtx.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(offlineCtx.destination);
+      src.start();
+      const rendered = await offlineCtx.startRendering();
+      slicerPcmData = rendered.getChannelData(0);
+    } else {
+      slicerPcmData = audioBuf.getChannelData(0);
+    }
+    
+    drawModalWaveform();
+    const scrubber = document.getElementById('modal-scrubber');
+    scrubber.disabled = false;
+    scrubber.max = Math.max(0, slicerPcmData.length - CLIP_SAMPLES);
+    scrubber.value = 0;
+    updateModalScrubber();
+    log(`✓ File "${file.name}" loaded successfully into slicer. Total samples: ${slicerPcmData.length}`);
+  } catch (err) {
+    alert('Error loading file: ' + err.message);
+    log(`❌ Failed loading slicer file: ${err.message}`);
+  }
+}
+
+// Draw the full waveforms of the loaded/recorded source audio
+function drawModalWaveform() {
+  if (!slicerPcmData) return;
+  const canvas = document.getElementById('modal-waveform-canvas');
+  const ctx = canvas.getContext('2d');
+  
+  canvas.width = canvas.clientWidth * window.devicePixelRatio;
+  canvas.height = canvas.clientHeight * window.devicePixelRatio;
+  const w = canvas.width;
+  const h = canvas.height;
+  
+  ctx.fillStyle = '#10111a';
+  ctx.fillRect(0, 0, w, h);
+  
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+  
+  ctx.fillStyle = 'rgba(47, 105, 255, 0.65)';
+  const step = Math.ceil(slicerPcmData.length / w);
+  for (let i = 0; i < w; i++) {
+    const start = i * step;
+    let min = 1.0;
+    let max = -1.0;
+    for (let j = 0; j < step && start + j < slicerPcmData.length; j++) {
+      const val = slicerPcmData[start + j];
+      if (val < min) min = val;
+      if (val > max) max = val;
+    }
+    if (max < min) { min = 0; max = 0; }
+    const y1 = (1 + min) * (h / 2);
+    const y2 = (1 + max) * (h / 2);
+    ctx.fillRect(i, y1, 1, Math.max(1, y2 - y1));
+  }
+}
+
+// Update scrubber time codes and visual overlay window
+function updateModalScrubber() {
+  if (!slicerPcmData) return;
+  const startSample = parseInt(document.getElementById('modal-scrubber').value);
+  const startTime = startSample / SAMPLE_RATE;
+  const endTime = (startSample + CLIP_SAMPLES) / SAMPLE_RATE;
+  const totalTime = slicerPcmData.length / SAMPLE_RATE;
+  
+  document.getElementById('modal-time-display').textContent = `${startTime.toFixed(2)}s / ${totalTime.toFixed(2)}s`;
+  document.getElementById('modal-slice-info').textContent = `Slice: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`;
+  
+  updateModalSliceOverlay();
+}
+
+// Redraw highlighted slice overlay window
+function updateModalSliceOverlay() {
+  const overlay = document.getElementById('modal-slice-overlay');
+  if (!slicerPcmData) {
+    overlay.style.display = 'none';
+    return;
+  }
+  
+  overlay.style.display = 'block';
+  const startSample = parseInt(document.getElementById('modal-scrubber').value);
+  const leftPct = (startSample / slicerPcmData.length) * 100;
+  const widthPct = (CLIP_SAMPLES / slicerPcmData.length) * 100;
+  
+  overlay.style.left = `${leftPct}%`;
+  overlay.style.width = `${widthPct}%`;
+}
+
+// Play only the selected slice
+function playModalSlice() {
+  if (!slicerPcmData) return;
+  if (slicerAudioSource) {
+    stopModalAudio();
+    return;
+  }
+  
+  const startSample = parseInt(document.getElementById('modal-scrubber').value);
+  const slice = slicerPcmData.slice(startSample, startSample + CLIP_SAMPLES);
+  
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const buf = audioCtx.createBuffer(1, slice.length, SAMPLE_RATE);
+  buf.getChannelData(0).set(slice);
+  
+  slicerAudioSource = audioCtx.createBufferSource();
+  slicerAudioSource.buffer = buf;
+  slicerAudioSource.connect(audioCtx.destination);
+  slicerAudioSource.onended = () => {
+    slicerAudioSource = null;
+    document.getElementById('modal-play-btn').textContent = '▶ Play Selected Slice';
+  };
+  
+  slicerAudioSource.start(0);
+  document.getElementById('modal-play-btn').textContent = '⏹ Stop Playback';
+}
+
+// Extract the selected slice to the modal's preview list
+function extractModalSlice() {
+  if (!slicerPcmData) return;
+  const startSample = parseInt(document.getElementById('modal-scrubber').value);
+  const slice = new Float32Array(CLIP_SAMPLES);
+  slice.set(slicerPcmData.slice(startSample, startSample + CLIP_SAMPLES));
+  
+  slicerExtractedClips.push(slice);
+  renderModalExtractedClips();
+}
+
+// Render extracted sample thumbnails inside modal sidebar
+function renderModalExtractedClips() {
+  const grid = document.getElementById('modal-extracted-grid');
+  grid.innerHTML = '';
+  slicerExtractedClips.forEach((slice, idx) => {
+    grid.innerHTML += `
+      <div class="sample-thumb" onclick="playModalExtracted(${idx})" style="background: linear-gradient(135deg, var(--green), var(--green)cc)" title="Extracted ${idx + 1}">
+        ▶
+        <div class="sample-delete" onclick="event.stopPropagation(); deleteModalExtracted(${idx})">×</div>
+      </div>`;
+  });
+}
+
+// Play dynamic preview inside modal sidebar
+function playModalExtracted(idx) {
+  const slice = slicerExtractedClips[idx];
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const buf = audioCtx.createBuffer(1, slice.length, SAMPLE_RATE);
+  buf.getChannelData(0).set(slice);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  src.start(0);
+}
+
+// Delete from modal preview sidebar
+function deleteModalExtracted(idx) {
+  slicerExtractedClips.splice(idx, 1);
+  renderModalExtractedClips();
+}
+
+// Save all extracted clips into the class block
+function saveExtractedClips() {
+  if (slicerExtractedClips.length === 0) {
+    alert('No slices extracted yet! Use the scrubber and click "Extract Sample" first.');
+    return;
+  }
+  
+  slicerExtractedClips.forEach(slice => {
+    classes[slicerClassIndex].clips.push({ pcm: slice });
+  });
+  
+  renderClasses();
+  closeExtractorModal();
+  
+  if (model) {
+    model.dispose();
+    model = null;
+  }
+  tflBuf = null;
+  document.getElementById('export-section').style.display = 'none';
+  document.getElementById('status-text').textContent = 'Ready to Train';
+  document.getElementById('status-text').style.color = 'var(--text)';
+  
+  log(`✓ Successfully saved ${slicerExtractedClips.length} slices into Class [${classes[slicerClassIndex].name}]`);
+}
+
+function startVisualizers() {
+  if (!analyser) return;
+  const canvasW = document.getElementById('waveform-canvas');
+  const canvasS = document.getElementById('spectrum-canvas');
+  if (!canvasW || !canvasS) return;
+  
+  const ctxW = canvasW.getContext('2d');
+  const ctxS = canvasS.getContext('2d');
+  
+  canvasW.width = canvasW.clientWidth * window.devicePixelRatio;
+  canvasW.height = canvasW.clientHeight * window.devicePixelRatio;
+  canvasS.width = canvasS.clientWidth * window.devicePixelRatio;
+  canvasS.height = canvasS.clientHeight * window.devicePixelRatio;
+  
+  const w = canvasW.width, h = canvasW.height;
+  const sW = canvasS.width, sH = canvasS.height;
+  
+  const timeData = new Uint8Array(analyser.fftSize);
+  const freqData = new Uint8Array(analyser.frequencyBinCount);
+  
+  function draw() {
+    animationId = requestAnimationFrame(draw);
+    
+    // 1. Waveform Draw
+    analyser.getByteTimeDomainData(timeData);
+    ctxW.fillStyle = '#10111a';
+    ctxW.fillRect(0, 0, w, h);
+    
+    ctxW.strokeStyle = 'rgba(47, 105, 255, 0.1)';
+    ctxW.lineWidth = 1;
+    ctxW.beginPath();
+    ctxW.moveTo(0, h / 2);
+    ctxW.lineTo(w, h / 2);
+    ctxW.stroke();
+    
+    ctxW.strokeStyle = '#2f69ff';
+    ctxW.lineWidth = 3 * window.devicePixelRatio;
+    ctxW.beginPath();
+    
+    const sliceWidth = w / timeData.length;
+    let x = 0;
+    for (let i = 0; i < timeData.length; i++) {
+      const v = timeData[i] / 128.0;
+      const y = v * (h / 2);
+      if (i === 0) ctxW.moveTo(x, y);
+      else ctxW.lineTo(x, y);
+      x += sliceWidth;
+    }
+    ctxW.stroke();
+    
+    // 2. Spectrogram/FFT Draw
+    analyser.getByteFrequencyData(freqData);
+    ctxS.fillStyle = '#10111a';
+    ctxS.fillRect(0, 0, sW, sH);
+    
+    const barWidth = (sW / freqData.length) * 1.5;
+    let barHeight;
+    let xS = 0;
+    
+    for (let i = 0; i < freqData.length; i++) {
+      barHeight = (freqData[i] / 255) * sH;
+      const hue = (i / freqData.length) * 140 + 200; // Blue-purple to Green
+      ctxS.fillStyle = `hsla(${hue}, 85%, 60%, 0.8)`;
+      ctxS.fillRect(xS, sH - barHeight, barWidth - 1, barHeight);
+      xS += barWidth;
+    }
+  }
+  
+  draw();
+}
+
+function stopVisualizers() {
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+}
+
+// --- YAMNET BACKBONE INTEGRATION ---
+let yamnetModel = null;
+
+async function initYAMNet() {
+  if (yamnetModel) return;
+  const statusEl = document.getElementById('status-text');
+  statusEl.textContent = 'Loading Pre-Trained YAMNet Backbone (~3MB)...';
+  statusEl.style.color = 'var(--orange)';
+  try {
+    yamnetModel = await tf.loadGraphModel('https://tfhub.dev/google/tfjs-model/yamnet/tfjs/1', {fromTFHub: true});
+    console.log("YAMNet Backbone loaded successfully.");
+    statusEl.textContent = 'Backbone ready — YAMNet (embed dim: 1024)';
+    statusEl.style.color = 'var(--green)';
+  } catch(e) {
+    console.error("YAMNet load failed", e);
+    statusEl.textContent = 'Error loading Backbone. Ensure internet connection.';
+    statusEl.style.color = 'var(--error)';
+  }
+}
+
+function extractYAMNetEmbedding(pcmFloat32Array) {
+  if (!yamnetModel) throw new Error("YAMNet not loaded");
+  return tf.tidy(() => {
+    const input = tf.tensor1d(pcmFloat32Array);
+    const res = yamnetModel.predict(input);
+    const embeddings = Array.isArray(res) ? res[1] : (res.embeddings || res);
+    const averaged = embeddings.mean(0);
+    return averaged.arraySync();
+  });
+}
+
+function buildMLPHead(nc, dropoutRate = 0.3) {
+  const input = tf.input({shape: [1024]});
+  const dense1 = tf.layers.dense({units: 512, activation: 'relu'}).apply(input);
+  let features = dense1;
+  if (dropoutRate > 0) {
+    features = tf.layers.dropout({rate: dropoutRate}).apply(dense1);
+  }
+  const dense2 = tf.layers.dense({units: 256, activation: 'relu'}).apply(features);
+  const output = tf.layers.dense({units: nc, activation: 'softmax'}).apply(dense2);
+  return tf.model({inputs: input, outputs: output});
+}
+
+function buildModel(nc, dropoutRate = 0.3, arch = 'sedscnn') {
+  const input = tf.input({shape: [N_FRAMES * N_MFCC]});
+  const reshaped = tf.layers.reshape({targetShape: [N_FRAMES, N_MFCC, 1]}).apply(input);
+
+  const dr = (x) => dropoutRate > 0 ? tf.layers.dropout({rate: dropoutRate}).apply(x) : x;
+
+  if (arch === 'sedscnn' || arch === 'sedscnn_kws') {
+    // SE-DS-CNN: 12 tensors — deployable to MCU
+    const conv1 = tf.layers.conv2d({filters: 16, kernelSize: [3, 3], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const pool1 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(conv1);
+    const depth = tf.layers.depthwiseConv2d({kernelSize: [3, 3], padding: 'same', depthMultiplier: 1, activation: 'relu', dataFormat: 'channelsLast'}).apply(pool1);
+    const sq    = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(depth);
+    const fc1   = tf.layers.dense({units: 4,  activation: 'relu'}).apply(sq);
+    const fc2   = tf.layers.dense({units: 16, activation: 'sigmoid'}).apply(fc1);
+    const fc2r  = tf.layers.reshape({targetShape: [1, 1, 16]}).apply(fc2);
+    const scaled = tf.layers.multiply().apply([depth, fc2r]);
+    const pw    = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(scaled);
+    const pool2 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(pw);
+    const gap   = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(pool2);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(gap))});
+
+  } else if (arch === 'dscnn') {
+    // DS-CNN: 8 tensors — deployable to MCU
+    const conv1 = tf.layers.conv2d({filters: 16, kernelSize: [3, 3], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const pool1 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(conv1);
+    const depth = tf.layers.depthwiseConv2d({kernelSize: [3, 3], padding: 'same', depthMultiplier: 1, activation: 'relu', dataFormat: 'channelsLast'}).apply(pool1);
+    const pw    = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(depth);
+    const pool2 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(pw);
+    const gap   = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(pool2);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(gap))});
+
+  } else if (arch === 'tcresnet') {
+    // TC-ResNet8: temporal [3,1] residual convolutions — 16 tensors, deployable to MCU
+    const c0  = tf.layers.conv2d({filters: 16, kernelSize: [3, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const r1a = tf.layers.conv2d({filters: 24, kernelSize: [3, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(c0);
+    const r1b = tf.layers.conv2d({filters: 24, kernelSize: [3, 1], padding: 'same', dataFormat: 'channelsLast'}).apply(r1a);
+    const r1s = tf.layers.conv2d({filters: 24, kernelSize: [1, 1], padding: 'same', dataFormat: 'channelsLast'}).apply(c0);
+    const r1  = tf.layers.activation({activation: 'relu'}).apply(tf.layers.add().apply([r1b, r1s]));
+    const r2a = tf.layers.conv2d({filters: 32, kernelSize: [3, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(r1);
+    const r2b = tf.layers.conv2d({filters: 32, kernelSize: [3, 1], padding: 'same', dataFormat: 'channelsLast'}).apply(r2a);
+    const r2s = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', dataFormat: 'channelsLast'}).apply(r1);
+    const r2  = tf.layers.activation({activation: 'relu'}).apply(tf.layers.add().apply([r2b, r2s]));
+    const gap = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(r2);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(gap))});
+
+  } else if (arch === 'matchboxnet') {
+    // MatchboxNet: 1D multi-scale depthwise-separable — 16 tensors, deployable to MCU
+    const stem  = tf.layers.conv2d({filters: 32, kernelSize: [11, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const b1dw  = tf.layers.depthwiseConv2d({kernelSize: [11, 1], padding: 'same', depthMultiplier: 1, activation: 'relu', dataFormat: 'channelsLast'}).apply(stem);
+    const b1pw  = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(b1dw);
+    const b2dw  = tf.layers.depthwiseConv2d({kernelSize: [13, 1], padding: 'same', depthMultiplier: 1, activation: 'relu', dataFormat: 'channelsLast'}).apply(b1pw);
+    const b2pw  = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(b2dw);
+    const b3dw  = tf.layers.depthwiseConv2d({kernelSize: [15, 1], padding: 'same', depthMultiplier: 1, activation: 'relu', dataFormat: 'channelsLast'}).apply(b2pw);
+    const b3pw  = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(b3dw);
+    const gap   = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(b3pw);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(gap))});
+
+  } else if (arch === 'resnetse') {
+    // ResNet-SE: deeper residual + SE blocks — 24 tensors, browser only
+    const c0   = tf.layers.conv2d({filters: 32, kernelSize: [3, 3], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const p0   = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(c0);
+    const r1a  = tf.layers.conv2d({filters: 32, kernelSize: [3, 3], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(p0);
+    const r1b  = tf.layers.conv2d({filters: 32, kernelSize: [3, 3], padding: 'same', dataFormat: 'channelsLast'}).apply(r1a);
+    const se1g = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(r1b);
+    const se1a = tf.layers.dense({units: 8,  activation: 'relu'}).apply(se1g);
+    const se1b = tf.layers.dense({units: 32, activation: 'sigmoid'}).apply(se1a);
+    const se1r = tf.layers.reshape({targetShape: [1, 1, 32]}).apply(se1b);
+    const r1   = tf.layers.activation({activation: 'relu'}).apply(tf.layers.add().apply([tf.layers.multiply().apply([r1b, se1r]), p0]));
+    const r2a  = tf.layers.conv2d({filters: 48, kernelSize: [3, 3], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(r1);
+    const r2b  = tf.layers.conv2d({filters: 48, kernelSize: [3, 3], padding: 'same', dataFormat: 'channelsLast'}).apply(r2a);
+    const se2g = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(r2b);
+    const se2a = tf.layers.dense({units: 12, activation: 'relu'}).apply(se2g);
+    const se2b = tf.layers.dense({units: 48, activation: 'sigmoid'}).apply(se2a);
+    const se2r = tf.layers.reshape({targetShape: [1, 1, 48]}).apply(se2b);
+    const r2sk = tf.layers.conv2d({filters: 48, kernelSize: [1, 1], padding: 'same', dataFormat: 'channelsLast'}).apply(r1);
+    const r2   = tf.layers.activation({activation: 'relu'}).apply(tf.layers.add().apply([tf.layers.multiply().apply([r2b, se2r]), r2sk]));
+    const p2   = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(r2);
+    const gap  = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(p2);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(gap))});
+
+  } else if (arch === 'xvector') {
+    // X-Vector: TDNN-style dilated temporal convolutions — 10 tensors, browser only
+    const t1  = tf.layers.conv2d({filters: 64, kernelSize: [5, 1], padding: 'same', dilationRate: [1, 1], activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const t2  = tf.layers.conv2d({filters: 64, kernelSize: [5, 1], padding: 'same', dilationRate: [2, 1], activation: 'relu', dataFormat: 'channelsLast'}).apply(t1);
+    const t3  = tf.layers.conv2d({filters: 64, kernelSize: [7, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(t2);
+    const gap = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(t3);
+    const emb = tf.layers.dense({units: 128, activation: 'relu'}).apply(gap);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(emb))});
+
+  } else if (arch === 'ecapa') {
+    // ECAPA: channel SE-attention + temporal aggregation — 14 tensors, browser only
+    const cv1  = tf.layers.conv2d({filters: 32, kernelSize: [5, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const se1g = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(cv1);
+    const se1a = tf.layers.dense({units: 8,  activation: 'relu'}).apply(se1g);
+    const se1b = tf.layers.dense({units: 32, activation: 'sigmoid'}).apply(se1a);
+    const att1 = tf.layers.multiply().apply([cv1, tf.layers.reshape({targetShape: [1, 1, 32]}).apply(se1b)]);
+    const cv2  = tf.layers.conv2d({filters: 32, kernelSize: [7, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(att1);
+    const se2g = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(cv2);
+    const se2a = tf.layers.dense({units: 8,  activation: 'relu'}).apply(se2g);
+    const se2b = tf.layers.dense({units: 32, activation: 'sigmoid'}).apply(se2a);
+    const att2 = tf.layers.multiply().apply([cv2, tf.layers.reshape({targetShape: [1, 1, 32]}).apply(se2b)]);
+    const gap  = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(att2);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(gap))});
+
+  } else if (arch === 'multihead') {
+    // MultiHead: SE-DS-CNN backbone + two parallel dense heads averaged — 16 tensors, browser only
+    const conv1 = tf.layers.conv2d({filters: 16, kernelSize: [3, 3], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const pool1 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(conv1);
+    const depth = tf.layers.depthwiseConv2d({kernelSize: [3, 3], padding: 'same', depthMultiplier: 1, activation: 'relu', dataFormat: 'channelsLast'}).apply(pool1);
+    const sq    = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(depth);
+    const fc1   = tf.layers.dense({units: 4,  activation: 'relu'}).apply(sq);
+    const fc2   = tf.layers.dense({units: 16, activation: 'sigmoid'}).apply(fc1);
+    const scaled = tf.layers.multiply().apply([depth, tf.layers.reshape({targetShape: [1, 1, 16]}).apply(fc2)]);
+    const pw    = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(scaled);
+    const pool2 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(pw);
+    const gap   = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(pool2);
+    const h1    = tf.layers.dense({units: 32, activation: 'relu'}).apply(gap);
+    const h2    = tf.layers.dense({units: 32, activation: 'relu'}).apply(gap);
+    const merged = tf.layers.average().apply([h1, h2]);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(merged))});
+
+  } else {
+    // Fallback: DS-CNN
+    const conv1 = tf.layers.conv2d({filters: 16, kernelSize: [3, 3], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(reshaped);
+    const pool1 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(conv1);
+    const depth = tf.layers.depthwiseConv2d({kernelSize: [3, 3], padding: 'same', depthMultiplier: 1, activation: 'relu', dataFormat: 'channelsLast'}).apply(pool1);
+    const pw    = tf.layers.conv2d({filters: 32, kernelSize: [1, 1], padding: 'same', activation: 'relu', dataFormat: 'channelsLast'}).apply(depth);
+    const pool2 = tf.layers.maxPooling2d({poolSize: [2, 2], dataFormat: 'channelsLast'}).apply(pw);
+    const gap   = tf.layers.globalAveragePooling2d({dataFormat: 'channelsLast'}).apply(pool2);
+    return tf.model({inputs: input, outputs: tf.layers.dense({units: nc, activation: 'softmax'}).apply(dr(gap))});
+  }
+}
+async function trainModel() {
+  if (appMode === 'POSE') { await trainPoseModel(); return; }
+  if (appMode === 'IMAGE') { await trainImageModel(); return; }
+  try {
+    stopPreview(); // Auto-stop live preview to prevent thread collisions and variable disposal errors during training
+    if (classes.length < 2) { alert('You must add at least 2 classes to train.'); return; }
+    const bad = classes.filter(c => c.clips.length < 5);
+    if (bad.length) { alert(`"${bad[0].name}" needs at least 5 clips to train.`); return; }
+    
+    document.getElementById('status-text').textContent = 'Training Model...';
+    document.getElementById('status-text').style.color = 'var(--orange)';
+    document.getElementById('train-btn').disabled = true;
+    
+    const ep = parseInt(document.getElementById('epochs').value);
+    const lr = parseFloat(document.getElementById('lr').value);
+    const bs = parseInt(document.getElementById('batch').value);
+    const dropout = parseFloat(document.getElementById('dropout').value);
+    const arch = document.getElementById('unified-arch').value;
+    
+    if (arch === 'yamnet' && !yamnetModel) {
+      await initYAMNet();
+    }
+    
+    log(`Starting Model Training with ${ep} epochs (LR: ${lr}, BS: ${bs}, Dropout: ${dropout}, Arch: ${arch})...`);
+    
+    const xs = [], ys = [];
+    
+    if (arch === 'yamnet') {
+      document.getElementById('status-text').textContent = 'Extracting Embeddings via YAMNet Backbone...';
+      await tf.nextFrame();
+      for (let ci = 0; ci < classes.length; ci++) {
+        for (const c of classes[ci].clips) {
+          const emb = extractYAMNetEmbedding(c.pcm);
+          xs.push(tf.tensor1d(emb, 'float32'));
+          ys.push(ci);
+          // For YAMNet, add one augmented version (just volume shift) to save time/memory
+          const augPcm = new Float32Array(c.pcm.length);
+          const gain = 0.8 + Math.random() * 0.4;
+          for (let k = 0; k < c.pcm.length; k++) augPcm[k] = c.pcm[k] * gain;
+          xs.push(tf.tensor1d(extractYAMNetEmbedding(augPcm), 'float32'));
+          ys.push(ci);
+        }
+      }
+    } else {
+      document.getElementById('status-text').textContent = 'Extracting MFCC Features...';
+      await tf.nextFrame();
+      for (let ci = 0; ci < classes.length; ci++) {
+        for (const c of classes[ci].clips) {
+          xs.push(tf.tensor1d(extractFeatures(c.pcm), 'float32'));
+          ys.push(ci);
+          for (let aug = 0; aug < 4; aug++) {
+            const augPcm = new Float32Array(c.pcm.length);
+            const shift = Math.floor((Math.random() - 0.5) * 1600);
+            if (shift > 0) augPcm.set(c.pcm.subarray(0, c.pcm.length - shift), shift);
+            else if (shift < 0) augPcm.set(c.pcm.subarray(-shift), 0);
+            else augPcm.set(c.pcm);
+            const gain = 0.1 + Math.random() * 1.9; // Expanded min/max volume range for better accuracy!
+            for (let k = 0; k < augPcm.length; k++) augPcm[k] = (augPcm[k] * gain) + ((Math.random() - 0.5) * 0.006);
+            xs.push(tf.tensor1d(extractFeatures(augPcm), 'float32'));
+            ys.push(ci);
+          }
+        }
+      }
+    }
+    
+    log(`Feature Extraction completed for ${ys.length} clips.`);
+    const xAll = tf.stack(xs);
+    const yOneHot = tf.oneHot(tf.tensor1d(ys, 'int32'), classes.length);
+    const yAll = yOneHot.reshape([ys.length, classes.length]);
+    yOneHot.dispose();
+    xs.forEach(t => t.dispose());
+    
+    if (model) model.dispose();
+    if (arch === 'yamnet') {
+      model = buildMLPHead(classes.length, dropout);
+    } else {
+      model = buildModel(classes.length, dropout, arch);
+    }
+    
+    model.compile({ optimizer: tf.train.adam(lr), loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+    
+    let bestAcc = 0;
+    await model.fit(xAll, yAll, {
+      epochs: ep,
+      batchSize: bs,
+      shuffle: true,
+      callbacks: {
+        onEpochEnd: (epoch, logs) => {
+          log(`Epoch ${epoch+1}: loss = ${logs.loss.toFixed(4)}, acc = ${(logs.acc*100).toFixed(1)}%`);
+          bestAcc = Math.max(bestAcc, logs.acc);
+          document.getElementById('status-text').textContent = `Training... Epoch ${epoch+1}/${ep}`;
+          document.querySelector('.progress-fill').style.width = ((epoch + 1) / ep * 100) + '%';
+        }
+      }
+    });
+    
+    xAll.dispose(); yAll.dispose();
+    
+    log(`✓ Training successful! Best accuracy reached: ${(bestAcc*100).toFixed(1)}%`);
+
+    // Per-arch export capability flags
+    const zipArchs    = new Set(['sedscnn', 'sedscnn_kws', 'dscnn']);
+    const deployArchs = new Set(['sedscnn', 'sedscnn_kws', 'dscnn', 'tcresnet', 'matchboxnet']);
+    const canZip    = zipArchs.has(arch);
+    const canDeploy = deployArchs.has(arch);
+    const canBin    = arch !== 'yamnet';
+
+    const setBtn = (el, on, msg) => {
+      if (!el) return;
+      el.disabled = !on; el.style.opacity = on ? '1' : '0.5';
+      el.style.cursor = on ? 'pointer' : 'not-allowed'; el.title = on ? '' : msg;
+    };
+    setBtn(document.querySelector('button[onclick="downloadZIP()"]'), canZip,
+           'C++ export only available for SE-DS-CNN and DS-CNN');
+    setBtn(document.querySelector('button[onclick="downloadBin()"]'), canBin,
+           'Binary export not available for YAMNet');
+    setBtn(document.getElementById('usb-deploy-btn'), canDeploy,
+           'USB deploy requires a deployable arch (SE-DS-CNN, DS-CNN, TC-ResNet8, MatchboxNet)');
+
+    // Build TFL3 binary for all non-YAMNet architectures
+    if (arch !== 'yamnet') {
+      try {
+        tflBuf = await buildTFLiteBinary(model, classes.length, arch);
+        log(`✓ Exportable quantized binary created: ${(tflBuf.byteLength / 1024).toFixed(1)} KB`);
+      } catch(e) {
+        log(`Warning: Could not build TFLite binary - ${e.message}`);
+      }
+    }
+    
+    document.getElementById('status-text').textContent = 'Training Completed Successfully!';
+    document.getElementById('status-text').style.color = 'var(--green)';
+    document.getElementById('export-section').style.display = 'block';
+    document.getElementById('train-btn').disabled = false;
+    
+  } catch (err) {
+    log(`❌ Training failed: ${err.message}`);
+    document.getElementById('status-text').textContent = 'Training Error';
+    document.getElementById('status-text').style.color = 'var(--red)';
+    document.getElementById('train-btn').disabled = false;
+  }
+}
+
+async function buildTFLiteBinary(jsModel, nc, arch = 'sedscnn') {
+  const archIds = { sedscnn: 1, sedscnn_kws: 1, dscnn: 2, tcresnet: 3, matchboxnet: 4 };
+  const archId = archIds[arch] || 0;
+  const weights = jsModel.getWeights();
+  const wdata = await Promise.all(weights.map(async w => ({ data: await w.data(), shape: w.shape })));
+  const qw = wdata.map(w => {
+    let mx = 0;
+    for (let j = 0; j < w.data.length; j++) { const a = Math.abs(w.data[j]); if (a > mx) mx = a; }
+    if (!mx) mx = 1;
+    const sc = mx / 127;
+    const q = new Int8Array(w.data.length);
+    for (let i = 0; i < w.data.length; i++) q[i] = Math.max(-127, Math.min(127, Math.round(w.data[i] / sc)));
+    return { q, sc };
+  });
+  const totalW = qw.reduce((s, w) => s + w.q.length, 0);
+  const buf = new ArrayBuffer(256 + qw.length * 20 + totalW);
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  [0x20, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33].forEach((b, i) => u8[i] = b);
+  dv.setUint32(8,  1,          true); // format version
+  dv.setUint32(12, nc,         true); // num classes
+  dv.setUint32(16, qw.length,  true); // tensor count
+  dv.setUint32(20, archId,     true); // architecture ID (NEW)
+  const cn = classes.map(c => c.name).join(',').slice(0, 180);
+  u8.set(new TextEncoder().encode(cn), 48);
+  let mo = 256, do_ = 256 + qw.length * 20;
+  for (const w of qw) {
+    dv.setUint32(mo, do_, true); dv.setUint32(mo + 4, w.q.length, true); dv.setFloat32(mo + 8, w.sc, true);
+    mo += 20; u8.set(new Uint8Array(w.q.buffer), do_); do_ += w.q.length;
+  }
+  return buf.slice(0, do_);
+}
+
+function buildBars() {
+  const b = document.getElementById('output-bars');
+  b.innerHTML = '';
+  classes.forEach((c, i) => {
+    b.innerHTML += `
+      <div class="output-item">
+        <div class="output-label" style="color: ${c.color}">${c.name}</div>
+        <div class="output-bar">
+          <div class="output-fill" id="bar${i}" style="width: 0%; background: ${c.color}"></div>
+        </div>
+        <div class="output-pct" id="val${i}">0%</div>
+      </div>`;
+  });
+}
+
+function buildImageCNN(nc) {
+  const model = tf.sequential();
+  model.add(tf.layers.conv2d({
+    inputShape: [48, 48, 1],
+    filters: 8,
+    kernelSize: 3,
+    padding: 'valid',
+    activation: 'relu',
+    useBias: true
+  }));
+  model.add(tf.layers.maxPooling2d({
+    poolSize: [2, 2],
+    strides: [2, 2]
+  }));
+  model.add(tf.layers.conv2d({
+    filters: 16,
+    kernelSize: 3,
+    padding: 'valid',
+    activation: 'relu',
+    useBias: true
+  }));
+  model.add(tf.layers.maxPooling2d({
+    poolSize: [2, 2],
+    strides: [2, 2]
+  }));
+  model.add(tf.layers.flatten());
+  model.add(tf.layers.dense({
+    units: nc,
+    activation: 'softmax',
+    useBias: true
+  }));
+  return model;
+}
+
+async function buildImageModelBinary(jsModel, nc) {
+  const weights = jsModel.getWeights();
+  const wdata = await Promise.all(weights.map(w => w.data()));
+  const totalFloats = 72 + 8 + 1152 + 16 + 1600 * nc + nc;
+  const buf = new ArrayBuffer(4 + totalFloats * 4);
+  const view = new DataView(buf);
+  view.setInt32(0, nc, true);
+  
+  let byteOffset = 4;
+  wdata.forEach(arr => {
+    for (let i = 0; i < arr.length; i++) {
+      view.setFloat32(byteOffset, arr[i], true);
+      byteOffset += 4;
+    }
+  });
+  return buf;
+}
+
+async function trainImageModel() {
+  stopImageCamera();
+  if (classes.some(c => !c.images || c.images.length < 5)) {
+    alert("Need at least 5 images per class!");
+    startImageCamera();
+    return;
+  }
+  document.getElementById('status-text').textContent = "Training Image CNN...";
+  document.getElementById('status-text').style.color = 'var(--orange)';
+  document.getElementById('train-btn').disabled = true;
+  
+  const xs = [], ys = [];
+  classes.forEach((c, i) => {
+    c.images.forEach(imgArr => {
+      xs.push(tf.tensor3d(imgArr, [48, 48, 1]));
+      ys.push(i);
+      
+      const flipped = tf.tidy(() => {
+        const t = tf.tensor3d(imgArr, [48, 48, 1]).expandDims(0);
+        return tf.image.flipLeftRight(t).squeeze([0]);
+      });
+      xs.push(flipped);
+      ys.push(i);
+      
+      const augmented = tf.tidy(() => {
+        const t = tf.tensor3d(imgArr, [48, 48, 1]);
+        const noise = tf.randomNormal([48, 48, 1], 0, 0.02);
+        return tf.clipByValue(t.add(noise), 0, 1);
+      });
+      xs.push(augmented);
+      ys.push(i);
+    });
+  });
+  
+  const xT = tf.stack(xs);
+  const yT = tf.oneHot(tf.tensor1d(ys, 'int32'), classes.length).reshape([ys.length, classes.length]);
+  
+  xs.forEach(t => t.dispose());
+  
+  if (model) model.dispose();
+  model = buildImageCNN(classes.length);
+  
+  const lr = parseFloat(document.getElementById('lr').value);
+  model.compile({ optimizer: tf.train.adam(lr), loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+  
+  const epochs = parseInt(document.getElementById('epochs').value);
+  const batchSize = parseInt(document.getElementById('batch').value);
+  
+  let bestAcc = 0;
+  await model.fit(xT, yT, {
+    epochs: epochs,
+    batchSize: batchSize,
+    callbacks: {
+      onEpochEnd: (epoch, logs) => {
+        log(`Epoch ${epoch+1}: loss = ${logs.loss.toFixed(4)}, acc = ${(logs.acc*100).toFixed(1)}%`);
+        bestAcc = Math.max(bestAcc, logs.acc);
+        document.getElementById('status-text').textContent = `Epoch ${epoch+1}/${epochs} - Loss: ${logs.loss.toFixed(4)} - Acc: ${(logs.acc*100).toFixed(1)}%`;
+        const pct = ((epoch+1) / epochs) * 100;
+        document.querySelector('.progress-fill').style.width = pct + '%';
+      }
+    }
+  });
+  
+  xT.dispose(); yT.dispose();
+  
+  log(`✓ CNN Image Training successful! Best accuracy reached: ${(bestAcc*100).toFixed(1)}%`);
+  
+  try {
+    tflBuf = await buildImageModelBinary(model, classes.length);
+    log(`✓ CNN weight binary compiled successfully: ${(tflBuf.byteLength / 1024).toFixed(1)} KB`);
+  } catch (e) {
+    log(`Warning: Could not build C++ model binary - ${e.message}`);
+  }
+  
+  const _sb = (el, on, msg) => { if (!el) return; el.disabled=!on; el.style.opacity=on?'1':'0.5'; el.style.cursor=on?'pointer':'not-allowed'; el.title=on?'':msg; };
+  _sb(document.querySelector('button[onclick="downloadZIP()"]'), false, 'C++ export not available for Image models');
+  _sb(document.querySelector('button[onclick="downloadBin()"]'), true, '');
+  _sb(document.getElementById('usb-deploy-btn'), true, '');
+
+  document.getElementById('status-text').textContent = "Image Training Complete!";
+  document.getElementById('status-text').style.color = 'var(--green)';
+  document.getElementById('export-section').style.display = 'block';
+  document.getElementById('train-btn').disabled = false;
+
+  startImageCamera();
+}
+
+// ======================= POSE MODEL TRAINING =======================
+async function trainPoseModel() {
+  stopCamera();
+  if (classes.some(c => !c.images || c.images.length < 5)) {
+    alert("Need at least 5 pose samples per class! Hold the Record button to capture frames.");
+    startCamera();
+    return;
+  }
+  document.getElementById('status-text').textContent = "Training Pose CNN...";
+  document.getElementById('train-btn').disabled = true;
+
+  const nc = classes.length;
+  const xs = [], ys = [];
+  classes.forEach((c, i) => {
+    c.images.forEach(imgArr => { xs.push(imgArr); ys.push(i); });
+  });
+
+  const xFlat = new Float32Array(xs.length * 48 * 48);
+  xs.forEach((arr, i) => xFlat.set(arr, i * 48 * 48));
+  const xT = tf.tensor4d(xFlat, [xs.length, 48, 48, 1]);
+  const yT = tf.oneHot(tf.tensor1d(ys, 'int32'), nc);
+
+  if (model) model.dispose();
+  model = buildImageCNN(nc);
+  const lr = parseFloat(document.getElementById('lr').value);
+  model.compile({ optimizer: tf.train.adam(lr), loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+
+  const epochs = parseInt(document.getElementById('epochs').value);
+  const batchSize = parseInt(document.getElementById('batch').value);
+  let bestAcc = 0;
+
+  await model.fit(xT, yT, {
+    epochs: epochs,
+    batchSize: batchSize,
+    shuffle: true,
+    callbacks: {
+      onEpochEnd: (epoch, logs) => {
+        log(`Epoch ${epoch+1}: loss = ${logs.loss.toFixed(4)}, acc = ${(logs.acc*100).toFixed(1)}%`);
+        bestAcc = Math.max(bestAcc, logs.acc);
+        document.getElementById('status-text').textContent = `Epoch ${epoch+1}/${epochs} - Loss: ${logs.loss.toFixed(4)} - Acc: ${(logs.acc*100).toFixed(1)}%`;
+        document.querySelector('.progress-fill').style.width = ((epoch+1)/epochs*100) + '%';
+      }
+    }
+  });
+
+  xT.dispose(); yT.dispose();
+  log(`✓ Pose CNN Training complete! Best accuracy: ${(bestAcc*100).toFixed(1)}%`);
+
+  try {
+    tflBuf = await buildImageModelBinary(model, nc);
+    log(`✓ Pose binary compiled: ${(tflBuf.byteLength / 1024).toFixed(1)} KB (auto-detected as IMAGE on device)`);
+  } catch (e) {
+    log(`Warning: Could not build binary - ${e.message}`);
+  }
+
+  const _sb = (el, on, msg) => { if (!el) return; el.disabled=!on; el.style.opacity=on?'1':'0.5'; el.style.cursor=on?'pointer':'not-allowed'; el.title=on?'':msg; };
+  _sb(document.querySelector('button[onclick="downloadZIP()"]'), true, '');
+  _sb(document.querySelector('button[onclick="downloadBin()"]'), true, '');
+  _sb(document.getElementById('usb-deploy-btn'), true, '');
+
+  document.getElementById('status-text').textContent = "Pose Training Complete!";
+  document.getElementById('status-text').style.color = 'var(--green)';
+  document.getElementById('export-section').style.display = 'block';
+  document.getElementById('train-btn').disabled = false;
+  startCamera();
+}
+// ======================= END POSE TRAINING =======================
+
+async function startPreview() {
+  if (!model) { alert('Please train a model first!'); return; }
+  
+  if (appMode === 'POSE') {
+    previewActive = true;
+    poseSmoothedScores = null;
+    buildBars();
+    document.getElementById('output-section').style.display = 'block';
+    document.getElementById('preview-btn').style.display = 'none';
+    document.getElementById('stop-btn').style.display = 'block';
+    document.getElementById('input-toggle').checked = true;
+    return;
+  }
+  
+  if (appMode === 'IMAGE') {
+    previewActive = true;
+    imgSmoothedScores = null;
+    buildBars();
+    document.getElementById('output-section').style.display = 'block';
+    document.getElementById('preview-btn').style.display = 'none';
+    document.getElementById('stop-btn').style.display = 'block';
+    document.getElementById('input-toggle').checked = true;
+    return;
+  }
+  
+  if (isRecording) return;
+  previewActive = true;
+  buildBars();
+  document.getElementById('output-section').style.display = 'block';
+  document.getElementById('preview-btn').style.display = 'none';
+  document.getElementById('stop-btn').style.display = 'block';
+  document.getElementById('input-toggle').checked = true;
+  
+  if (!micStream) {
+    try {
+      const deviceId = document.getElementById('mic-select').value;
+      if (!micStream || !micStream.active || micStream.deviceId !== deviceId) {
+        if (micStream) micStream.getTracks().forEach(track => track.stop());
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        micStream.deviceId = deviceId;
+      }
+    } catch (e) {
+      alert('Could not access microphone.');
+      return;
+    }
+  }
+  
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+  
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  sourceNode = audioCtx.createMediaStreamSource(micStream);
+  sourceNode.connect(analyser);
+  
+  startVisualizers();
+  
+  previewActive = true;
+  // Use a pre-allocated Float32Array to eliminate all garbage collection allocation lag
+  rollingBuffer = new Float32Array(CLIP_SAMPLES);
+  let rollingCount = 0;
+  let lastInfer = 0;
+  let firstFrameLog = false;
+  let firstInferLog = false;
+  let smoothedScores = null;
+  
+  // Set buffer size to 512 for ultra-low 32ms buffer latency (down from 1024 / 64ms latency)
+  processor = audioCtx.createScriptProcessor(512, 1, 1);
+  processor.onaudioprocess = (e) => {
+    if (!previewActive || !model) return;
+    const newData = e.inputBuffer.getChannelData(0);
+    
+    if (!firstFrameLog) {
+      log("✓ onaudioprocess started receiving audio buffers! Buffer size: " + newData.length);
+      firstFrameLog = true;
+    }
+    
+    // Fast block shifting using native Float32Array APIs (copyWithin and set)
+    const n = newData.length;
+    if (rollingCount < CLIP_SAMPLES) {
+      const needed = CLIP_SAMPLES - rollingCount;
+      const toCopy = Math.min(n, needed);
+      rollingBuffer.set(newData.subarray(0, toCopy), rollingCount);
+      rollingCount += toCopy;
+      if (n > needed) {
+        const remaining = n - needed;
+        rollingBuffer.copyWithin(0, remaining);
+        rollingBuffer.set(newData.subarray(needed), CLIP_SAMPLES - remaining);
+      }
+    } else {
+      rollingBuffer.copyWithin(0, n);
+      rollingBuffer.set(newData, CLIP_SAMPLES - n);
+    }
+    
+    // Run prediction every 45ms for ultra-responsive live detection
+    if (rollingCount === CLIP_SAMPLES && Date.now() - lastInfer > 45) {
+      lastInfer = Date.now();
+      
+      if (!firstInferLog) {
+        log("✓ rollingBuffer fully loaded (" + CLIP_SAMPLES + " samples). Running first prediction...");
+        firstInferLog = true;
+      }
+      
+      try {
+        let sumSq = 0;
+        for (let i = 0; i < rollingBuffer.length; i++) {
+          sumSq += rollingBuffer[i] * rollingBuffer[i];
+        }
+        const rms = Math.sqrt(sumSq / rollingBuffer.length);
+        
+        if (rms < noiseGateThreshold) {
+          // Skip TF.js inference, force Class 0 (Background_Noise) to 100% and show "Silence Gate"
+          for (let i = 0; i < classes.length; i++) {
+            const pct = (i === 0) ? 100 : 0;
+            const labelSuffix = (i === 0) ? " (Silence Gate)" : "";
+            const valEl = document.getElementById(`val${i}`);
+            const barEl = document.getElementById(`bar${i}`);
+            if (valEl) valEl.textContent = pct + '%' + labelSuffix;
+            if (barEl) barEl.style.width = pct + '%';
+          }
+        } else {
+          tf.tidy(() => {
+            const arch = document.getElementById('unified-arch').value;
+            let pred;
+            if (arch === 'yamnet') {
+              const emb = extractYAMNetEmbedding(rollingBuffer);
+              const t = tf.tensor2d(emb, [1, 1024], 'float32');
+              pred = model.predict(t);
+            } else {
+              const featData = extractFeatures(rollingBuffer);
+              const t = tf.tensor2d(featData, [1, N_FRAMES * N_MFCC], 'float32');
+              pred = model.predict(t);
+            }
+            const scores = pred.dataSync();
+            
+            if (!smoothedScores) smoothedScores = Array.from(scores);
+            for (let i = 0; i < scores.length; i++) {
+              smoothedScores[i] = smoothedScores[i] * 0.75 + scores[i] * 0.25; // EMA Smoothing
+            }
+            
+            for (let i = 0; i < Math.min(smoothedScores.length, classes.length); i++) {
+              const pct = Math.round(smoothedScores[i] * 100);
+              const valEl = document.getElementById(`val${i}`);
+              const barEl = document.getElementById(`bar${i}`);
+              if (valEl) valEl.textContent = pct + '%';
+              if (barEl) barEl.style.width = pct + '%';
+            }
+          });
+        }
+      } catch (err) {
+        log(`❌ Preview Inference Error: ${err.message}`);
+        console.error(err);
+      }
+    }
+  };
+  
+  sourceNode.connect(processor);
+  processor.connect(audioCtx.destination);
+}
+
+function stopPreview() {
+  previewActive = false;
+  document.getElementById('input-toggle').checked = false;
+  document.getElementById('preview-btn').style.display = 'block';
+  document.getElementById('stop-btn').style.display = 'none';
+  
+  if (appMode === 'POSE' || appMode === 'IMAGE') {
+    return;
+  }
+  
+  stopVisualizers();
+  if (processor) processor.disconnect();
+  if (sourceNode) {
+    sourceNode.disconnect();
+    sourceNode = null;
+  }
+}
+
+async function downloadZIP() {
+  if (appMode === 'IMAGE' || appMode === 'POSE') {
+    if (!model) { alert('Please train a model first!'); return; }
+    const w = model.getWeights();
+    let cpp = `// Auto-Generated Image Classification CNN Weights\n#ifndef IMG_MODEL_DATA_H\n#define IMG_MODEL_DATA_H\n\n`;
+    cpp += `const int NUM_CLASSES = ${classes.length};\n\n`;
+    const toCArray = (tensor, name) => {
+      const arr = tensor.dataSync();
+      return `const float ${name}_data[${arr.length}] = {${Array.from(arr).map(v => v.toFixed(6)).join(',')}};\n`;
+    };
+    cpp += toCArray(w[0], "W1");
+    cpp += toCArray(w[1], "b1");
+    cpp += toCArray(w[2], "W2");
+    cpp += toCArray(w[3], "b2");
+    cpp += toCArray(w[4], "W3");
+    cpp += toCArray(w[5], "b3");
+    cpp += `\n#endif\n`;
+    
+    const ino = `#include <Arduino.h>
+#include <SPIFFS.h>
+#include <math.h>
+#include "esp_camera.h"
+#include "esp_log.h"
+#include "img_model_data.h"
+
+// ==========================================
+// CAMERA PIN CONFIGURATION (DFRobot ESP32-S3 AI Camera v1.1)
+// ==========================================
+#define PWDN_GPIO_NUM     -1
+#define RESET_GPIO_NUM    -1
+#define XCLK_GPIO_NUM     5
+#define SIOD_GPIO_NUM     8
+#define SIOC_GPIO_NUM     9
+
+#define Y9_GPIO_NUM       4
+#define Y8_GPIO_NUM       6
+#define Y7_GPIO_NUM       7
+#define Y6_GPIO_NUM       14
+#define Y5_GPIO_NUM       17
+#define Y4_GPIO_NUM       21
+#define Y3_GPIO_NUM       18
+#define Y2_GPIO_NUM       16
+
+#define VSYNC_GPIO_NUM    1
+#define HREF_GPIO_NUM     2
+#define PCLK_GPIO_NUM     15
+
+#define LED_GPIO_NUM      47
+
+int num_classes = 0;
+float* W1 = nullptr;
+float* b1 = nullptr;
+float* W2 = nullptr;
+float* b2 = nullptr;
+float* W3 = nullptr;
+float* b3 = nullptr;
+
+bool modelLoaded = false;
+bool isReceivingModel = false;
+File modelFile;
+
+float relu(float x) { return x > 0 ? x : 0; }
+
+void freeModel() {
+  if (W1) free(W1); if (b1) free(b1);
+  if (W2) free(W2); if (b2) free(b2);
+  if (W3) free(W3); if (b3) free(b3);
+  W1 = b1 = W2 = b2 = W3 = b3 = nullptr;
+  modelLoaded = false;
+}
+
+bool loadModelFromFS() {
+  if (!SPIFFS.exists("/img_model.bin")) return false;
+  File file = SPIFFS.open("/img_model.bin", "r");
+  if (!file) return false;
+
+  freeModel();
+
+  if (file.read((uint8_t*)&num_classes, 4) != 4) { file.close(); return false; }
+  if (num_classes <= 0 || num_classes > 100) { file.close(); return false; }
+
+  W1 = (float*)malloc(72 * sizeof(float));
+  b1 = (float*)malloc(8 * sizeof(float));
+  W2 = (float*)malloc(1152 * sizeof(float));
+  b2 = (float*)malloc(16 * sizeof(float));
+  W3 = (float*)malloc(1600 * num_classes * sizeof(float));
+  b3 = (float*)malloc(num_classes * sizeof(float));
+
+  if (!W1 || !b1 || !W2 || !b2 || !W3 || !b3) { freeModel(); file.close(); return false; }
+
+  file.read((uint8_t*)W1, 72 * sizeof(float));
+  file.read((uint8_t*)b1, 8 * sizeof(float));
+  file.read((uint8_t*)W2, 1152 * sizeof(float));
+  file.read((uint8_t*)b2, 16 * sizeof(float));
+  file.read((uint8_t*)W3, 1600 * num_classes * sizeof(float));
+  file.read((uint8_t*)b3, num_classes * sizeof(float));
+
+  file.close();
+  modelLoaded = true;
+  return true;
+}
+
+void setup() {
+  Serial.begin(115200);
+  Serial.setTimeout(5000);
+  esp_log_level_set("*", ESP_LOG_NONE);
+  delay(1000);
+
+  #ifdef LED_GPIO_NUM
+  pinMode(LED_GPIO_NUM, OUTPUT);
+  digitalWrite(LED_GPIO_NUM, LOW);
+  #endif
+
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed");
+  }
+
+  // Init Camera
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM; config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM; config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM; config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM; config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM; config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM; config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM; config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM; config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_GRAYSCALE; 
+  config.frame_size = FRAMESIZE_96X96;
+  config.jpeg_quality = 12;
+  config.fb_count = 1;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    Serial.printf("Camera init failed with error 0x%x\\n", err);
+  } else {
+    Serial.println("Camera initialized.");
+    // Correct the sensor's native horizontal mirror (hardware/lens
+    // characteristic of this camera module) so on-device frames match
+    // how training samples were captured in the browser trainer, which
+    // mirrors ESP32-S3 captures the same way. Without this, a model
+    // trained on browser-mirrored samples sees un-mirrored frames here
+    // and predictions will be unreliable.
+    sensor_t *s = esp_camera_sensor_get();
+    if (s) { s->set_hmirror(s, 1); }
+  }
+
+  if (loadModelFromFS()) {
+    Serial.println("SERIAL READY (Dynamic Model Loaded)");
+  } else {
+    Serial.println("✓ Loading compiled-in fallback model weights.");
+    num_classes = NUM_CLASSES;
+    W1 = (float*)malloc(72 * sizeof(float));
+    b1 = (float*)malloc(8 * sizeof(float));
+    W2 = (float*)malloc(1152 * sizeof(float));
+    b2 = (float*)malloc(16 * sizeof(float));
+    W3 = (float*)malloc(1600 * num_classes * sizeof(float));
+    b3 = (float*)malloc(num_classes * sizeof(float));
+    
+    if (W1 && b1 && W2 && b2 && W3 && b3) {
+      memcpy(W1, W1_data, 72 * sizeof(float));
+      memcpy(b1, b1_data, 8 * sizeof(float));
+      memcpy(W2, W2_data, 1152 * sizeof(float));
+      memcpy(b2, b2_data, 16 * sizeof(float));
+      memcpy(W3, W3_data, 1600 * num_classes * sizeof(float));
+      memcpy(b3, b3_data, num_classes * sizeof(float));
+      modelLoaded = true;
+      Serial.println("SERIAL READY (Compiled Model Loaded)");
+    } else {
+      freeModel();
+      Serial.println("SERIAL READY (Allocation failed)");
+    }
+  }
+}
+
+void inference(const float* img) {
+  if (!modelLoaded) return;
+  
+  float* h1 = (float*)malloc(46 * 46 * 8 * sizeof(float));
+  for(int y=0; y<46; y++) {
+    for(int x=0; x<46; x++) {
+      for(int f=0; f<8; f++) {
+        float sum = b1[f];
+        for(int ky=0; ky<3; ky++) {
+          for(int kx=0; kx<3; kx++) {
+            sum += img[(y+ky)*48 + (x+kx)] * W1[((ky*3+kx)*8)+f];
+          }
+        }
+        h1[(y*46 + x)*8 + f] = relu(sum);
+      }
+    }
+  }
+
+  float* p1 = (float*)malloc(23 * 23 * 8 * sizeof(float));
+  for(int y=0; y<23; y++) {
+    for(int x=0; x<23; x++) {
+      for(int f=0; f<8; f++) {
+        float max_v = h1[((y*2)*46 + (x*2))*8 + f];
+        if (h1[((y*2+1)*46 + (x*2))*8 + f] > max_v) max_v = h1[((y*2+1)*46 + (x*2))*8 + f];
+        if (h1[((y*2)*46 + (x*2+1))*8 + f] > max_v) max_v = h1[((y*2)*46 + (x*2+1))*8 + f];
+        if (h1[((y*2+1)*46 + (x*2+1))*8 + f] > max_v) max_v = h1[((y*2+1)*46 + (x*2+1))*8 + f];
+        p1[(y*23 + x)*8 + f] = max_v;
+      }
+    }
+  }
+  free(h1);
+
+  float* h2 = (float*)malloc(21 * 21 * 16 * sizeof(float));
+  for(int y=0; y<21; y++) {
+    for(int x=0; x<21; x++) {
+      for(int f=0; f<16; f++) {
+        float sum = b2[f];
+        for(int ky=0; ky<3; ky++) {
+          for(int kx=0; kx<3; kx++) {
+            for(int c=0; c<8; c++) {
+              sum += p1[((y+ky)*23 + (x+kx))*8 + c] * W2[(((ky*3+kx)*8)+c)*16 + f];
+            }
+          }
+        }
+        h2[(y*21 + x)*16 + f] = relu(sum);
+      }
+    }
+  }
+  free(p1);
+
+  float* p2 = (float*)malloc(10 * 10 * 16 * sizeof(float));
+  for(int y=0; y<10; y++) {
+    for(int x=0; x<10; x++) {
+      for(int f=0; f<16; f++) {
+        float max_v = h2[((y*2)*21 + (x*2))*16 + f];
+        if (h2[((y*2+1)*21 + (x*2))*16 + f] > max_v) max_v = h2[((y*2+1)*21 + (x*2))*16 + f];
+        if (h2[((y*2)*21 + (x*2+1))*16 + f] > max_v) max_v = h2[((y*2)*21 + (x*2+1))*16 + f];
+        if (h2[((y*2+1)*21 + (x*2+1))*16 + f] > max_v) max_v = h2[((y*2+1)*21 + (x*2+1))*16 + f];
+        p2[(y*10 + x)*16 + f] = max_v;
+      }
+    }
+  }
+  free(h2);
+
+  float* out = (float*)malloc(num_classes * sizeof(float));
+  for(int i=0; i<num_classes; i++) out[i] = b3[i];
+
+  for(int i=0; i<num_classes; i++) {
+    for(int j=0; j<1600; j++) {
+      out[i] += p2[j] * W3[j*num_classes + i];
+    }
+  }
+  free(p2);
+
+  float max_val = -9999;
+  for(int i=0; i<num_classes; i++) if (out[i] > max_val) max_val = out[i];
+  
+  float sum = 0;
+  for(int i=0; i<num_classes; i++) {
+    out[i] = exp(out[i] - max_val);
+    sum += out[i];
+  }
+  
+  Serial.print("📸 Output: [ ");
+  float max_conf = 0.0f;
+  int max_idx = -1;
+  for(int i=0; i<num_classes; i++) {
+    float conf = out[i]/sum;
+    Serial.print(conf*100, 1); Serial.print("% ");
+    if (conf > max_conf) {
+      max_conf = conf;
+      max_idx = i;
+    }
+  }
+  Serial.println("]");
+
+  #ifdef LED_GPIO_NUM
+  if (max_idx > 0 && max_conf > 0.70f) {
+    digitalWrite(LED_GPIO_NUM, HIGH); 
+  } else {
+    digitalWrite(LED_GPIO_NUM, LOW);
+  }
+  #endif
+
+  free(out);
+}
+
+void loop() {
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\\n');
+    cmd.trim();
+    if (cmd == "PING") { Serial.println("SERIAL OK PONG"); } 
+    else if (cmd == "MODEL_BEGIN") {
+      isReceivingModel = true;
+      modelFile = SPIFFS.open("/img_model.bin", "w");
+      if (!modelFile) Serial.println("SERIAL ERR File open failed");
+      else Serial.println("SERIAL OK MODEL_BEGIN");
+    } 
+    else if (cmd.startsWith("MODEL_CHUNK")) {
+      if (!isReceivingModel) return;
+      int firstSpace = cmd.indexOf(' ');
+      int secondSpace = cmd.indexOf(' ', firstSpace + 1);
+      int len = cmd.substring(secondSpace + 1).toInt();
+      uint8_t* buf = (uint8_t*)malloc(len);
+      int readCount = 0;
+      unsigned long startTime = millis();
+      while (readCount < len && millis() - startTime < 5000) {
+        if (Serial.available()) readCount += Serial.readBytes(buf + readCount, len - readCount);
+      }
+      if (readCount == len) { modelFile.write(buf, len); Serial.println("SERIAL OK MODEL_CHUNK"); }
+      else Serial.println("SERIAL ERR Chunk timeout");
+      free(buf);
+    } 
+    else if (cmd == "MODEL_END") {
+      isReceivingModel = false;
+      if (modelFile) {
+        modelFile.close();
+        if (loadModelFromFS()) Serial.println("SERIAL OK MODEL_END");
+        else Serial.println("SERIAL ERR Model load failed");
+      }
+    }
+  }
+
+  if (modelLoaded && !isReceivingModel) {
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (fb) {
+      if (fb->len == 9216) {
+        static float imgFloat[48*48];
+        for(int y=0; y<48; y++) {
+          for(int x=0; x<48; x++) {
+            int sum = fb->buf[(y*2)*96 + (x*2)] + fb->buf[(y*2+1)*96 + (x*2)] + fb->buf[(y*2)*96 + (x*2+1)] + fb->buf[(y*2+1)*96 + (x*2+1)];
+            imgFloat[y*48 + x] = (sum / 4.0f) / 255.0f;
+          }
+        }
+        inference(imgFloat);
+      }
+      esp_camera_fb_return(fb);
+      delay(50);
+    }
+  }
+}
+`;
+    const readmeMd = `# ESP32-S3 Offline Grayscale Image Classification Project\n\nThis is a highly optimized offline image classification sketch generated using your Universal Teachable Machine Pro dashboard. It runs visual CNN inferences natively on the ESP32-S3 at up to 15 FPS using standard C++ structures.\n\n## 📸 Hardware Setup\nCompatible with standard DFRobot ESP32-S3 AI Camera v1.1. Includes onboard indicator LED setup on GPIO 47.\n`;
+    
+    const sketchName = appMode === 'POSE' ? 'pose_detection_arduino' : 'image_detection_arduino';
+    const zip = new JSZip();
+    const folder = zip.folder(sketchName);
+    folder.file(sketchName + ".ino", ino);
+    folder.file("img_model_data.h", cpp);
+    folder.file("README.md", readmeMd);
+    const content = await zip.generateAsync({type:"blob"});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(content);
+    a.download = sketchName + ".zip";
+    a.click();
+    return;
+  }
+
+  if (appMode === 'POSE') {
+    if (!model) { alert('Please train a model first!'); return; }
+    const w = model.getWeights();
+    let cpp = `// Auto-Generated Pose Detection MLP Weights\n#ifndef POSE_MODEL_DATA_H\n#define POSE_MODEL_DATA_H\n\n`;
+    cpp += `const int NUM_CLASSES = ${classes.length};\n`;
+    const toCArray = (tensor, name) => {
+      const arr = tensor.dataSync();
+      return `const float ${name}[${arr.length}] = {${Array.from(arr).map(v => v.toFixed(6)).join(',')}};\n`;
+    };
+    cpp += toCArray(w[0], "W1");
+    cpp += toCArray(w[1], "b1");
+    cpp += toCArray(w[2], "W2");
+    cpp += toCArray(w[3], "b2");
+    cpp += toCArray(w[4], "W3");
+    cpp += toCArray(w[5], "b3");
+    cpp += `\n#endif\n`;
+    
+    const ino = `// Pose Detection ESP32-S3 Inference
+#include "pose_model_data.h"
+#include <math.h>
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("ESP32 Pose Classifier Ready");
+}
+
+float relu(float x) { return x > 0 ? x : 0; }
+
+void inference(const float* input) {
+  float h1[64] = {0};
+  float h2[32] = {0};
+  float out[${classes.length}] = {0};
+  
+  for(int i=0; i<64; i++) {
+    for(int j=0; j<34; j++) h1[i] += input[j] * W1[j*64 + i];
+    h1[i] = relu(h1[i] + b1[i]);
+  }
+  for(int i=0; i<32; i++) {
+    for(int j=0; j<64; j++) h2[i] += h1[j] * W2[j*32 + i];
+    h2[i] = relu(h2[i] + b2[i]);
+  }
+  float max_val = -9999;
+  for(int i=0; i<${classes.length}; i++) {
+    for(int j=0; j<32; j++) out[i] += h2[j] * W3[j*${classes.length} + i];
+    out[i] += b3[i];
+    if(out[i] > max_val) max_val = out[i];
+  }
+  
+  float sum = 0;
+  for(int i=0; i<${classes.length}; i++) {
+    out[i] = exp(out[i] - max_val);
+    sum += out[i];
+  }
+  
+  for(int i=0; i<${classes.length}; i++) {
+    Serial.print("Class "); Serial.print(i); Serial.print(": ");
+    Serial.print((out[i]/sum)*100); Serial.println("%");
+  }
+}
+
+void loop() {
+  // Pass your 34 extracted floats here from your AI Camera module!
+  // float keypoints[34] = {...};
+  // inference(keypoints);
+  delay(1000);
+}
+`;
+    const zip = new JSZip();
+    const folder = zip.folder("pose_detection_arduino");
+    folder.file("pose_detection_arduino.ino", ino);
+    folder.file("pose_model_data.h", cpp);
+    const content = await zip.generateAsync({type:"blob"});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(content);
+    a.download = "pose_detection_arduino.zip";
+    a.click();
+    return;
+  }
+
+  if (!tflBuf) { alert('Please train a model first.'); return; }
+  const u8 = new Uint8Array(tflBuf);
+  
+  const inoText = `// Custom ESP32 Voice Recognition Sketch generated by Antigravity Voice Trainer
+#include "main_functions.h"
+`;
+
+  const mainFunctionsH = `#ifndef TENSORFLOW_LITE_MICRO_EXAMPLES_VOICE_RECOGNITION_MAIN_FUNCTIONS_H_
+#define TENSORFLOW_LITE_MICRO_EXAMPLES_VOICE_RECOGNITION_MAIN_FUNCTIONS_H_
+
+void setup();
+void loop();
+
+#endif  // TENSORFLOW_LITE_MICRO_EXAMPLES_VOICE_RECOGNITION_MAIN_FUNCTIONS_H_`;
+
+  const mainFunctionsCpp = `// Custom ESP32 Voice Recognition Sketch generated by Antigravity Voice Trainer
+#include "main_functions.h"
+#include "audio_provider.h"
+#include "model_settings.h"
+#include "voice_detect_model_data.h"
+#include <math.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>
+
+namespace {
+  int16_t audio_data[kAudioLength];
+  float feature_tensor[kMaxAudioSize];
+  
+  const float kPreemphasis = 0.97f;
+  constexpr int kHopLength = (kAudioLength - kWindowLength) / (kAudioFrames - 1);
+
+  struct QuantizedTensor {
+    const int8_t* qdata;
+    int length;
+    float scale;
+  };
+
+  QuantizedTensor tensors[16];
+  int loaded_tensor_count = 8;
+  bool model_loaded = false;
+  unsigned char* dynamic_model_data = nullptr;
+
+  // High-Speed Precomputed Static Lookup Tables for DSP and FFT
+  float fft_cos_table[kWindowLength];
+  float fft_sin_table[kWindowLength];
+  float dsp_hann_window[kWindowLength];
+  float dsp_filter_peaks[kMfccCoefficients + 2];
+  bool dsp_initialized = false;
+
+  void initDSPConstants() {
+    if (dsp_initialized) return;
+    
+    // 1. Precompute Cooley-Tukey Radix-2 twiddle tables
+    for (int i = 0; i < kWindowLength; i++) {
+      fft_cos_table[i] = cosf(-2.0f * M_PI * i / kWindowLength);
+      fft_sin_table[i] = sinf(-2.0f * M_PI * i / kWindowLength);
+    }
+    
+    // 2. Precompute standard Hann window
+    for (int i = 0; i < kWindowLength; i++) {
+      dsp_hann_window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (kWindowLength - 1)));
+    }
+    
+    // 3. Precompute Mel frequency filter bank peaks
+    float minHz = 0.0f;
+    float maxHz = 8000.0f;
+    
+    auto hzToMel = [](float hz) { return 2595.0f * log10f(1.0f + hz / 700.0f); };
+    auto melToHz = [](float mel) { return 700.0f * (powf(10.0f, mel / 2595.0f) - 1.0f); };
+    
+    float minMel = hzToMel(minHz);
+    float maxMel = hzToMel(maxHz);
+    float melStep = (maxMel - minMel) / (kMfccCoefficients + 1);
+    
+    for (int i = 0; i < kMfccCoefficients + 2; i++) {
+      float mel = minMel + i * melStep;
+      float hz = melToHz(mel);
+      dsp_filter_peaks[i] = hz * kWindowLength / kAudioSampleRate;
+    }
+    
+    dsp_initialized = true;
+    Serial.println("✓ Accelerated DSP Lookup Tables Initialized successfully!");
+  }
+}
+
+// Parse custom TFL3 quantized weights structure
+bool loadModel(const unsigned char* model_bytes) {
+  if (model_bytes[4] != 'T' || model_bytes[5] != 'F' || model_bytes[6] != 'L' || model_bytes[7] != '3') {
+    Serial.println("❌ ERROR: Model signature mismatch! Expected TFL3 magic bytes.");
+    return false;
+  }
+  
+  // Parse dynamic category count and labels from header
+  uint32_t nc = *(const uint32_t*)(model_bytes + 12);
+  if (nc > 0 && nc <= kMaxCategoryCount) {
+    active_category_count = nc;
+    // Comma-separated labels at offset 48
+    const char* p = (const char*)(model_bytes + 48);
+    int label_idx = 0;
+    int char_idx = 0;
+    while (*p && label_idx < nc) {
+      if (*p == ',') {
+        active_labels[label_idx][char_idx] = '\0';
+        label_idx++;
+        char_idx = 0;
+      } else {
+        if (char_idx < 31) {
+          active_labels[label_idx][char_idx] = *p;
+          char_idx++;
+        }
+      }
+      p++;
+    }
+    active_labels[label_idx][char_idx] = '\0';
+  }
+  
+  uint32_t num_tensors = *(const uint32_t*)(model_bytes + 16);
+  if (num_tensors == 0 || num_tensors > 16) {
+    num_tensors = 8;
+  }
+  loaded_tensor_count = num_tensors;
+  
+  int header_offset = 256;
+  for (int i = 0; i < loaded_tensor_count; i++) {
+    uint32_t offset = *(const uint32_t*)(model_bytes + header_offset);
+    uint32_t length = *(const uint32_t*)(model_bytes + header_offset + 4);
+    float scale = *(const float*)(model_bytes + header_offset + 8);
+    
+    tensors[i].qdata = (const int8_t*)(model_bytes + offset);
+    tensors[i].length = length;
+    tensors[i].scale = scale;
+    
+    header_offset += 20;
+  }
+  
+  Serial.print("✓ TFL3 Quantized Weights parsed successfully! Loaded categories: ");
+  Serial.println(active_category_count);
+  for (int i = 0; i < active_category_count; i++) {
+    Serial.print("  - [");
+    Serial.print(i);
+    Serial.print("]: ");
+    Serial.println(active_labels[i]);
+  }
+  return true;
+}
+
+// FFT implementation matching the browser Mel DSP with precomputed twiddle factors
+void computeFFT(float* re, float* im, int n) {
+  initDSPConstants();
+  int j = 0;
+  for (int i = 0; i < n - 1; i++) {
+    if (i < j) {
+      float temp = re[i]; re[i] = re[j]; re[j] = temp;
+      temp = im[i]; im[i] = im[j]; im[j] = temp;
+    }
+    int m = n >> 1;
+    while (m >= 1 && j >= m) {
+      j -= m;
+      m >>= 1;
+    }
+    j += m;
+  }
+  for (int size = 2; size <= n; size <<= 1) {
+    int halfSize = size >> 1;
+    int tabStep = kWindowLength / size;
+    for (int i = 0; i < n; i += size) {
+      for (int k = 0; k < halfSize; k++) {
+        int idx = k * tabStep;
+        float wr = fft_cos_table[idx];
+        float wi = fft_sin_table[idx];
+        float pr = re[i + k + halfSize] * wr - im[i + k + halfSize] * wi;
+        float pi = re[i + k + halfSize] * wi + im[i + k + halfSize] * wr;
+        re[i + k + halfSize] = re[i + k] - pr;
+        im[i + k + halfSize] = im[i + k] - pi;
+        re[i + k] += pr;
+        im[i + k] += pi;
+      }
+    }
+  }
+}
+
+void extractFeatures(const int16_t* raw_audio, float* out_features) {
+  initDSPConstants();
+  static float prePcm[kAudioLength];
+  prePcm[0] = (float)raw_audio[0] / 32768.0f;
+  for (int i = 1; i < kAudioLength; i++) {
+    float cur = (float)raw_audio[i] / 32768.0f;
+    float prev = (float)raw_audio[i - 1] / 32768.0f;
+    prePcm[i] = cur - kPreemphasis * prev;
+  }
+
+  float re[kWindowLength];
+  float im[kWindowLength];
+  float mag[kWindowLength / 2];
+
+  for (int f = 0; f < kAudioFrames; f++) {
+    int start = f * kHopLength;
+
+    for (int i = 0; i < kWindowLength; i++) {
+      if (start + i < kAudioLength) {
+        re[i] = prePcm[start + i] * dsp_hann_window[i];
+      } else {
+        re[i] = 0.0f;
+      }
+      im[i] = 0.0f;
+    }
+
+    computeFFT(re, im, kWindowLength);
+
+    for (int i = 0; i < kWindowLength / 2; i++) {
+      mag[i] = sqrtf(re[i] * re[i] + im[i] * im[i]);
+    }
+
+    for (int m = 0; m < kMfccCoefficients; m++) {
+      float fbLow = dsp_filter_peaks[m];
+      float fbCenter = dsp_filter_peaks[m + 1];
+      float fbHigh = dsp_filter_peaks[m + 2];
+
+      float sum = 0.0f;
+      for (int i = (int)floorf(fbLow); i <= (int)ceilf(fbHigh) && i < kWindowLength / 2; i++) {
+        float weight = 0.0f;
+        if (i >= fbLow && i <= fbCenter) {
+          weight = (i - fbLow) / (fbCenter - fbLow);
+        } else if (i > fbCenter && i <= fbHigh) {
+          weight = (fbHigh - i) / (fbHigh - fbCenter);
+        }
+        sum += mag[i] * weight;
+      }
+      out_features[f * kMfccCoefficients + m] = logf(sum > 1e-5f ? sum : 1e-5f);
+    }
+  }
+
+  // prePcm is a pre-allocated static buffer, no delete[] needed
+
+  float sum = 0.0f;
+  int feat_len = kAudioFrames * kMfccCoefficients;
+  for (int i = 0; i < feat_len; i++) sum += out_features[i];
+  float mean = sum / feat_len;
+
+  float var_sum = 0.0f;
+  for (int i = 0; i < feat_len; i++) {
+    float diff = out_features[i] - mean;
+    var_sum += diff * diff;
+  }
+  float std = sqrtf(var_sum / feat_len);
+  if (std < 1e-5f) std = 1e-5f;
+
+  for (int i = 0; i < feat_len; i++) {
+    out_features[i] = (out_features[i] - mean) / (std + 1e-8f);
+  }
+}
+
+// Zero-Dependency inference engine implementing the exact trained TF.js DS-CNN layers
+float* runInference(const float* input) {
+  int H = kAudioFrames;
+  int W = kMfccCoefficients;
+  
+  // Layer 1: Standard Conv2D (filters: 16, 3x3) + ReLU + MaxPool (2x2)
+  int H_out = H / 2;
+  int W_out = W / 2;
+  static float* pool1_out = NULL;
+  if (!pool1_out) pool1_out = (float*)malloc(H_out * W_out * 16 * sizeof(float));
+  
+  for (int ph = 0; ph < H_out; ph++) {
+    for (int pw = 0; pw < W_out; pw++) {
+      for (int c = 0; c < 16; c++) {
+        float max_val = -1e9f;
+        for (int dy = 0; dy < 2; dy++) {
+          int h = ph * 2 + dy;
+          for (int dx = 0; dx < 2; dx++) {
+            int w = pw * 2 + dx;
+            
+            float conv_val = tensors[1].qdata[c] * tensors[1].scale; // Bias
+            for (int kh = 0; kh < 3; kh++) {
+              int in_y = h + kh - 1;
+              if (in_y >= 0 && in_y < H) {
+                for (int kw = 0; kw < 3; kw++) {
+                  int in_x = w + kw - 1;
+                  if (in_x >= 0 && in_x < W) {
+                    float input_val = input[in_y * W + in_x];
+                    float weight_val = tensors[0].qdata[kh * 48 + kw * 16 + c] * tensors[0].scale;
+                    conv_val += input_val * weight_val;
+                  }
+                }
+              }
+            }
+            float relu_val = conv_val > 0.0f ? conv_val : 0.0f;
+            if (relu_val > max_val) max_val = relu_val;
+          }
+        }
+        pool1_out[(ph * W_out + pw) * 16 + c] = max_val;
+      }
+    }
+  }
+  
+  // Layer 2: Depthwise Conv2D (kernel 3x3, same padding, in_channels: 16, multiplier: 1) + ReLU
+  static float* depth_out = NULL;
+  if (!depth_out) depth_out = (float*)malloc(H_out * W_out * 16 * sizeof(float));
+  for (int h = 0; h < H_out; h++) {
+    for (int w = 0; w < W_out; w++) {
+      for (int c = 0; c < 16; c++) {
+        float conv_val = tensors[3].qdata[c] * tensors[3].scale; // Bias
+        for (int kh = 0; kh < 3; kh++) {
+          int in_y = h + kh - 1;
+          if (in_y >= 0 && in_y < H_out) {
+            for (int kw = 0; kw < 3; kw++) {
+              int in_x = w + kw - 1;
+              if (in_x >= 0 && in_x < W_out) {
+                float input_val = pool1_out[(in_y * W_out + in_x) * 16 + c];
+                float weight_val = tensors[2].qdata[kh * 48 + kw * 16 + c] * tensors[2].scale;
+                conv_val += input_val * weight_val;
+              }
+            }
+          }
+        }
+        depth_out[(h * W_out + w) * 16 + c] = conv_val > 0.0f ? conv_val : 0.0f;
+      }
+    }
+  }
+  
+  // pool1_out is a pre-allocated static buffer
+
+  // Squeeze-and-Excitation block (only executed when loaded_tensor_count == 12)
+  if (loaded_tensor_count == 12) {
+    // Squeeze: Global Average Pooling of depth_out channels (16 channels)
+    float se_pool[16] = {0.0f};
+    int spatial_len = H_out * W_out;
+    for (int c = 0; c < 16; c++) {
+      float sum = 0.0f;
+      for (int i = 0; i < spatial_len; i++) {
+        sum += depth_out[i * 16 + c];
+      }
+      se_pool[c] = sum / spatial_len;
+    }
+
+    // FC1 (Reduction: 16 -> 4 + ReLU)
+    float fc1_out[4] = {0.0f};
+    for (int c_out = 0; c_out < 4; c_out++) {
+      float val = tensors[5].qdata[c_out] * tensors[5].scale; // FC1 Bias
+      for (int c_in = 0; c_in < 16; c_in++) {
+        float input_val = se_pool[c_in];
+        float weight_val = tensors[4].qdata[c_in * 4 + c_out] * tensors[4].scale; // FC1 Weight
+        val += input_val * weight_val;
+      }
+      fc1_out[c_out] = val > 0.0f ? val : 0.0f; // ReLU
+    }
+
+    // FC2 (Excitation: 4 -> 16 + Sigmoid)
+    float fc2_out[16] = {0.0f};
+    for (int c_out = 0; c_out < 16; c_out++) {
+      float val = tensors[7].qdata[c_out] * tensors[7].scale; // FC2 Bias
+      for (int c_in = 0; c_in < 4; c_in++) {
+        float input_val = fc1_out[c_in];
+        float weight_val = tensors[6].qdata[c_in * 16 + c_out] * tensors[6].scale; // FC2 Weight
+        val += input_val * weight_val;
+      }
+      // Sigmoid: 1 / (1 + exp(-val))
+      fc2_out[c_out] = 1.0f / (1.0f + expf(-val));
+    }
+
+    // Scale channel features
+    for (int i = 0; i < spatial_len; i++) {
+      for (int c = 0; c < 16; c++) {
+        depth_out[i * 16 + c] *= fc2_out[c];
+      }
+    }
+  }
+  
+  // Pointwise and Classifier layer index settings based on tensor count
+  int pw_w_idx = (loaded_tensor_count == 12) ? 8 : 4;
+  int pw_b_idx = (loaded_tensor_count == 12) ? 9 : 5;
+  int fc_w_idx = (loaded_tensor_count == 12) ? 10 : 6;
+  int fc_b_idx = (loaded_tensor_count == 12) ? 11 : 7;
+
+  // Layer 3: Pointwise Conv2D (filters: 32, 1x1) + ReLU + MaxPool (2x2)
+  int H_out2 = H_out / 2;
+  int W_out2 = W_out / 2;
+  static float* pool2_out = NULL;
+  if (!pool2_out) pool2_out = (float*)malloc(H_out2 * W_out2 * 32 * sizeof(float));
+  
+  for (int ph = 0; ph < H_out2; ph++) {
+    for (int pw = 0; pw < W_out2; pw++) {
+      for (int c = 0; c < 32; c++) {
+        float max_val = -1e9f;
+        for (int dy = 0; dy < 2; dy++) {
+          int h = ph * 2 + dy;
+          if (h < H_out) {
+            for (int dx = 0; dx < 2; dx++) {
+              int w = pw * 2 + dx;
+              if (w < W_out) {
+                float conv_val = tensors[pw_b_idx].qdata[c] * tensors[pw_b_idx].scale; // Bias
+                for (int c_in = 0; c_in < 16; c_in++) {
+                  float input_val = depth_out[(h * W_out + w) * 16 + c_in];
+                  float weight_val = tensors[pw_w_idx].qdata[c_in * 32 + c] * tensors[pw_w_idx].scale;
+                  conv_val += input_val * weight_val;
+                }
+                float relu_val = conv_val > 0.0f ? conv_val : 0.0f;
+                if (relu_val > max_val) max_val = relu_val;
+              }
+            }
+          }
+        }
+        pool2_out[(ph * W_out2 + pw) * 32 + c] = max_val;
+      }
+    }
+  }
+  
+  // depth_out is static
+  
+  // Layer 4: Global Average Pooling 2D
+  float gap_out[32];
+  int spatial_size = H_out2 * W_out2;
+  for (int c = 0; c < 32; c++) {
+    float sum = 0.0f;
+    for (int i = 0; i < spatial_size; i++) {
+      sum += pool2_out[i * 32 + c];
+    }
+    gap_out[c] = sum / spatial_size;
+  }
+  
+  // pool2_out is static
+  
+  // Layer 5: Dense (units: active_category_count) + Softmax
+  static float out_scores[kMaxCategoryCount];
+  float max_score_val = -1e9f;
+  
+  for (int c_out = 0; c_out < active_category_count; c_out++) {
+    float val = tensors[fc_b_idx].qdata[c_out] * tensors[fc_b_idx].scale; // Bias
+    for (int c_in = 0; c_in < 32; c_in++) {
+      float input_val = gap_out[c_in];
+      float weight_val = tensors[fc_w_idx].qdata[c_in * active_category_count + c_out] * tensors[fc_w_idx].scale;
+      val += input_val * weight_val;
+    }
+    out_scores[c_out] = val;
+    if (val > max_score_val) max_score_val = val;
+  }
+  
+  // Softmax normalization
+  float sum_exp = 0.0f;
+  for (int i = 0; i < active_category_count; i++) {
+    out_scores[i] = expf(out_scores[i] - max_score_val);
+    sum_exp += out_scores[i];
+  }
+  for (int i = 0; i < active_category_count; i++) {
+    out_scores[i] /= sum_exp;
+  }
+  
+  return out_scores;
+}
+
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>
+
+namespace {
+  WebServer server(80);
+  bool wifi_mode = true;
+  uint32_t wifi_start_time = 0;
+  const uint32_t kWifiTimeout = 15000; // 15 seconds upload window
+  
+  const char HTML_PAGE[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32-S3 Voice Trainer Portal</title>
+<style>
+  :root {
+    --bg: #0b0c10;
+    --bg2: #1f2833;
+    --primary: #66fcf1;
+    --primary-dark: #45a29e;
+    --text: #c5c6c7;
+    --text-light: #ffffff;
+    --border: #1f2833;
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .card {
+    background: rgba(31, 40, 51, 0.45);
+    border: 1px solid rgba(102, 252, 241, 0.2);
+    border-radius: 16px;
+    padding: 30px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 8px 32px 0 var(--shadow);
+    backdrop-filter: blur(10px);
+    text-align: center;
+  }
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-light);
+    margin-bottom: 8px;
+  }
+  p {
+    font-size: 14px;
+    color: #8c9bb4;
+    margin-bottom: 24px;
+  }
+  .upload-area {
+    border: 2px dashed rgba(102, 252, 241, 0.3);
+    border-radius: 12px;
+    padding: 30px 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: rgba(255, 255, 255, 0.02);
+    margin-bottom: 24px;
+  }
+  .upload-area:hover {
+    border-color: var(--primary);
+    background: rgba(102, 252, 241, 0.05);
+  }
+  .upload-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+  }
+  .file-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-light);
+  }
+  .progress-container {
+    display: none;
+    margin-bottom: 20px;
+  }
+  .progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--primary), #45a29e);
+    transition: width 0.1s linear;
+  }
+  .progress-text {
+    font-size: 12px;
+    margin-top: 6px;
+    display: block;
+  }
+  .btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--primary);
+    color: #0b0c10;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+  }
+  .btn:disabled {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.3);
+    cursor: not-allowed;
+  }
+  #status {
+    margin-top: 16px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .success { color: #00e676; }
+  .error { color: #ff3d00; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🎙️ Voice Trainer Portal</h1>
+  <p>Upload your trained <strong>TFL3 Model Binary (.bin)</strong> to flash.</p>
+  <div class="upload-area" onclick="document.getElementById('file-input').click()">
+    <div class="upload-icon">📥</div>
+    <div class="file-name" id="file-name-text">Select Model File</div>
+    <input type="file" id="file-input" accept=".bin" style="display:none" onchange="fileSelected(event)">
+  </div>
+  <div class="progress-container" id="prog-container">
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+    <span class="progress-text" id="prog-text">0%</span>
+  </div>
+  <button class="btn" id="upload-btn" onclick="upload()" disabled>🚀 Upload Model</button>
+  <div id="status"></div>
+</div>
+<script>
+let file = null;
+function fileSelected(e) {
+  if (e.target.files.length > 0) {
+    file = e.target.files[0];
+    document.getElementById('file-name-text').innerText = file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)';
+    document.getElementById('upload-btn').disabled = false;
+  }
+}
+function upload() {
+  if (!file) return;
+  document.getElementById('upload-btn').disabled = true;
+  document.getElementById('prog-container').style.display = 'block';
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/upload-do');
+  xhr.upload.onprogress = e => {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      document.getElementById('prog-fill').style.width = pct + '%';
+      document.getElementById('prog-text').innerText = 'Uploading: ' + pct + '%';
+    }
+  };
+  xhr.onload = () => {
+    const s = document.getElementById('status');
+    if (xhr.status === 200) {
+      s.className = 'success';
+      s.innerHTML = '🎉 Success! Model uploaded. Re-initializing inference...';
+      document.getElementById('prog-text').innerText = 'Upload Completed!';
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+    } else {
+      s.className = 'error';
+      s.innerText = '❌ Upload failed: ' + xhr.responseText;
+      document.getElementById('upload-btn').disabled = false;
+    }
+  };
+  xhr.onerror = () => {
+    const s = document.getElementById('status');
+    s.className = 'error';
+    s.innerText = '❌ Network error during upload.';
+    document.getElementById('upload-btn').disabled = false;
+  };
+  xhr.send(fd);
+}
+<\/script>
+</body>
+</html>
+)rawliteral";
+
+  void handleUploadModel() {
+    HTTPUpload& upload = server.upload();
+    static File f;
+    if (upload.status == UPLOAD_FILE_START) {
+      SPIFFS.remove("/model.bin");
+      f = SPIFFS.open("/model.bin", "w");
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (f) f.write(upload.buf, upload.currentSize);
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (f) f.close();
+    }
+  }
+}
+
+void setup() {
+  Serial.setRxBufferSize(8192); // Increase USB buffer to prevent dropped chunks!
+  Serial.begin(115200);
+  Serial.setTimeout(5000);
+  delay(1000);
+  Serial.println("🎙️ Initializing Standalone ESP32-S3 Voice Recognition...");
+
+  // Initialize SPIFFS
+  if (!SPIFFS.begin(true)) {
+    Serial.println("❌ SPIFFS Mount Failed!");
+  } else {
+    Serial.println("✓ SPIFFS Mounted successfully.");
+  }
+
+  // Try to load model from SPIFFS first
+  if (SPIFFS.exists("/model.bin")) {
+    File f = SPIFFS.open("/model.bin", "r");
+    size_t size = f.size();
+    if (size > 0) {
+      if (dynamic_model_data) free(dynamic_model_data);
+      dynamic_model_data = (unsigned char*)malloc(size);
+      if (dynamic_model_data) {
+        f.readBytes((char*)dynamic_model_data, size);
+        Serial.println("✓ Loaded uploaded model from SPIFFS.");
+        model_loaded = loadModel(dynamic_model_data);
+      }
+    }
+    f.close();
+  }
+
+  // Fallback to compiled weights
+  if (!model_loaded) {
+    Serial.println("✓ Falling back to compiled-in model weights.");
+    model_loaded = loadModel(g_voice_detect_model_data);
+  }
+
+  // Start WiFi upload portal
+  Serial.println("📡 Starting WiFi Access Point 'ESP32-Voice-Trainer' for model upload...");
+  WiFi.softAP("ESP32-Voice-Trainer", "12345678");
+  Serial.print("✓ AP IP Address: ");
+  Serial.println(WiFi.softAPIP());
+
+  server.on("/", HTTP_GET, []() {
+    server.send_P(200, "text/html", HTML_PAGE);
+  });
+  server.on("/upload-do", HTTP_POST, []() {
+    server.send(200, "text/plain", "OK");
+  }, handleUploadModel);
+
+  server.begin();
+  wifi_start_time = millis();
+  wifi_mode = true;
+  Serial.println("⏳ WiFi Upload Portal ready. Connecting within 15s keeps it open.");
+}
+
+void loop() {
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\\n');
+    cmd.trim();
+    if (cmd == "PING") {
+      Serial.println("SERIAL OK PONG");
+    } else if (cmd.startsWith("MODEL_BEGIN ")) {
+      int expectedSize = cmd.substring(12).toInt();
+      SPIFFS.remove("/model.bin");
+      File f = SPIFFS.open("/model.bin", "w");
+      Serial.println("SERIAL OK MODEL_BEGIN");
+      
+      int bytesReceived = 0;
+      while (bytesReceived < expectedSize) {
+        String chunkCmd = Serial.readStringUntil('\\n');
+        chunkCmd.trim();
+        if (chunkCmd.startsWith("MODEL_CHUNK ")) {
+          int spaceIdx = chunkCmd.indexOf(' ', 12);
+          int offset = chunkCmd.substring(12, spaceIdx).toInt();
+          int len = chunkCmd.substring(spaceIdx + 1).toInt();
+          
+          uint8_t* buf = (uint8_t*)malloc(len);
+          size_t readCount = 0;
+          unsigned long start = millis();
+          while (readCount < len && millis() - start < 15000) {
+            if (Serial.available()) {
+              readCount += Serial.readBytes(buf + readCount, len - readCount);
+            }
+          }
+          if (readCount == len) {
+            f.write(buf, len);
+            Serial.println("SERIAL OK MODEL_CHUNK");
+          } else {
+            Serial.println("SERIAL ERR Chunk timeout");
+          }
+          free(buf);
+          bytesReceived += len;
+        } else if (chunkCmd.startsWith("MODEL_END")) {
+          break;
+        }
+      }
+      f.close();
+      Serial.println("SERIAL OK MODEL_END");
+    } else if (cmd == "LOAD") {
+      if (SPIFFS.exists("/model.bin")) {
+        File f = SPIFFS.open("/model.bin", "r");
+        size_t size = f.size();
+        if (size > 0) {
+          if (dynamic_model_data) free(dynamic_model_data);
+          dynamic_model_data = (unsigned char*)malloc(size);
+          if (dynamic_model_data) {
+            f.read(dynamic_model_data, size);
+            model_loaded = loadModel(dynamic_model_data);
+            Serial.println("📂 New model loaded dynamically! Ready for inference.");
+          }
+        }
+        f.close();
+      }
+      Serial.println("SERIAL OK LOAD");
+    }
+  }
+
+  if (wifi_mode) {
+    server.handleClient();
+    
+    if (WiFi.softAPgetStationNum() > 0) {
+      wifi_start_time = millis(); // Reset timeout if someone is connected
+    }
+    
+    if (millis() - wifi_start_time > kWifiTimeout) {
+      Serial.println("⏳ WiFi idle timeout reached. Stopping Web Server and WiFi to free memory...");
+      server.stop();
+      WiFi.softAPdisconnect(true);
+      WiFi.mode(WIFI_OFF);
+      Serial.println("✓ WiFi and Web Server stopped successfully.");
+      
+      InitAudio();
+      Serial.println("🎙️ PDM Microphone initialized. Starting real-time voice inference!");
+      wifi_mode = false;
+    }
+    delay(10);
+    return;
+  }
+
+  if (!model_loaded) {
+    delay(1000);
+    return;
+  }
+
+  // Fast Detection: Sliding Window Buffer
+  int shift_samples = kAudioLength / 4; // Shift by 25% (e.g. 0.375 seconds)
+  memmove(audio_data, audio_data + shift_samples, (kAudioLength - shift_samples) * sizeof(int16_t));
+  if (!GetAudio(audio_data + (kAudioLength - shift_samples), shift_samples)) {
+    Serial.println("⚠️ Microphone capture error!");
+    delay(100);
+    return;
+  }
+  // Calculate RMS audio energy to act as a noise gate
+  float rms = 0.0f;
+  for (int i = 0; i < kAudioLength; i++) {
+    float sample = (float)audio_data[i] / 32768.0f;
+    rms += sample * sample;
+  }
+  rms = sqrtf(rms / kAudioLength);
+
+  // Lowered noise gate so it continuously prints independent detections for debugging
+  if (rms < 0.0001f) {
+    delay(100);
+    return;
+  }
+
+  // Run feature extraction (identical Log-Mel spectrum)
+  extractFeatures(audio_data, feature_tensor);
+
+  // Run lightning-fast, zero-dependency C++ inference
+  float* scores = runInference(feature_tensor);
+
+  float max_score = 0.0f;
+  int max_class = -1;
+  for (int i = 0; i < active_category_count; i++) {
+    if (scores[i] > max_score) {
+      max_score = scores[i];
+      max_class = i;
+    }
+  }
+
+  if (max_class != -1) {
+    Serial.print("🎙️ Detected: [");
+    Serial.print(active_labels[max_class]);
+    Serial.print("] (Conf: ");
+    Serial.print(max_score * 100.0f, 1);
+    Serial.print("%) | Mic RMS: ");
+    Serial.println(rms, 4);
+  }
+
+  // scores is a pre-allocated static buffer, no delete[] needed
+  delay(50); // Small cooldown interval
+}
+`;
+
+  const modelSettingsH = `// Model configurations generated matching training parameters
+#ifndef VOICE_RECOGNITION_MODEL_SETTINGS_H_
+#define VOICE_RECOGNITION_MODEL_SETTINGS_H_
+
+constexpr int kAudioSampleRate = 16000;
+constexpr int kAudioLength = ${CLIP_SAMPLES};
+constexpr int kWindowLength = 512;
+constexpr int kAudioFrames = ${N_FRAMES};
+constexpr int kMfccCoefficients = ${N_MFCC};
+constexpr float kNoiseGateThreshold = ${noiseGateThreshold.toFixed(4)}f;
+
+constexpr int kMaxAudioSize = kAudioFrames * kMfccCoefficients;
+
+constexpr int kMaxCategoryCount = 16;
+extern int active_category_count;
+extern char active_labels[kMaxCategoryCount][32];
+
+#endif // VOICE_RECOGNITION_MODEL_SETTINGS_H_`;
+
+  const modelSettingsCpp = `#include "model_settings.h"
+
+int active_category_count = ${classes.length};
+char active_labels[kMaxCategoryCount][32] = {
+  ${classes.map(c => `"${c.name}"`).join(',\n  ')}
+};`;
+
+  const audioProviderH = `#ifndef VOICE_RECOGNITION_AUDIO_PROVIDER_H_
+#define VOICE_RECOGNITION_AUDIO_PROVIDER_H_
+
+#include <Arduino.h>
+
+void InitAudio();
+bool GetAudio(int16_t* audio_data, int audio_length);
+
+#endif // VOICE_RECOGNITION_AUDIO_PROVIDER_H_`;
+
+  const audioProviderCpp = `#include "audio_provider.h"
+#include <ESP_I2S.h>
+
+#define PIN_CLK  38
+#define PIN_DATA 39
+
+I2SClass i2s_pdm;
+
+void InitAudio() {
+  i2s_pdm.setPinsPdmRx(PIN_CLK, PIN_DATA);
+  if (!i2s_pdm.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO)) {
+    Serial.println("❌ Failed to initialize I2S PDM RX");
+  }
+}
+
+bool GetAudio(int16_t* audio_data, int audio_length) {
+  size_t bytes_read = i2s_pdm.readBytes((char*)audio_data, audio_length * sizeof(int16_t));
+  if (bytes_read == 0) {
+    return false;
+  }
+  return true;
+}`;
+
+  const voiceDetectModelDataH = `#ifndef VOICE_RECOGNITION_MODEL_DATA_H_
+#define VOICE_RECOGNITION_MODEL_DATA_H_
+
+extern const unsigned char g_voice_detect_model_data[];
+extern const int g_voice_detect_model_data_len;
+
+#endif // VOICE_RECOGNITION_MODEL_DATA_H_`;
+
+  let cpp = `#include "voice_detect_model_data.h"\n\nalignas(8) const unsigned char g_voice_detect_model_data[] = {\n  `;
+  for (let i = 0; i < u8.length; i++) {
+    cpp += `0x${u8[i].toString(16).padStart(2, '0')}`;
+    if (i < u8.length - 1) {
+      cpp += (i % 16 === 15) ? ',\n  ' : ', ';
+    }
+  }
+  cpp += `\n};\nconst int g_voice_detect_model_data_len = ${u8.length};`;
+
+  const readmeMd = `# ESP32-S3 Offline Voice Command Recognition Project (Dynamic Model Upload)
+
+This is a professional, standalone offline voice command recognition sketch generated using your Voice Trainer Mel DSP pipeline. It features a zero-dependency C++ Conv2D inference engine and an integrated Wi-Fi model upload portal.
+
+## 🎙️ Hardware Setup (ESP32-S3 + PDM Mic)
+Wire your PDM digital microphone (e.g. DFRobot, Adafruit PDM) to the ESP32-S3 as follows:
+* **CLK**: GPIO 38
+* **DATA**: GPIO 39
+* **GND**: GND
+* **VCC**: 3.3V
+
+*Note: Pin numbers can be configured in \`audio_provider.cpp\` if using a different board configuration.*
+
+## 🚀 How to Build and Run
+1. Unzip \`voice_detection_arduino.zip\`.
+2. Move the extracted folder into your standard Arduino sketch directory.
+3. Open \`voice_detection_arduino.ino\` in the Arduino IDE.
+4. Select your ESP32-S3 board and upload the sketch! (Ensure SPIFFS is enabled on your partition scheme, e.g. "Default 4MB with spiffs" or "8MB with spiffs").
+5. When the board boots, it starts a Wi-Fi Access Point:
+   - **SSID**: \`ESP32-Voice-Trainer\`
+   - **Password**: \`12345678\`
+   - **Portal IP**: \`192.168.4.1\`
+6. Connect your phone or PC to this Wi-Fi network and navigate to \`http://192.168.4.1/\`.
+7. Upload your trained \`model.bin\` file using the beautiful glassmorphic web interface.
+8. Once the model is uploaded, the board will save it to internal flash (SPIFFS), gracefully shutdown Wi-Fi to eliminate radio frequency/DMA interference, and automatically start real-time microphone voice inference!
+9. Open the Serial Monitor (Baud Rate: 115200) to see recognized voice commands in real-time.
+`;
+
+  const zip = new JSZip();
+  const f = zip.folder('voice_detection_arduino');
+  f.file('voice_detection_arduino.ino', inoText);
+  f.file('main_functions.h', mainFunctionsH);
+  f.file('main_functions.cpp', mainFunctionsCpp);
+  f.file('model_settings.h', modelSettingsH);
+  f.file('model_settings.cpp', modelSettingsCpp);
+  f.file('audio_provider.h', audioProviderH);
+  f.file('audio_provider.cpp', audioProviderCpp);
+  f.file('voice_detect_model_data.h', voiceDetectModelDataH);
+  f.file('voice_detect_model_data.cpp', cpp);
+  f.file('README.md', readmeMd);
+  
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'voice_detection_arduino.zip';
+  a.click();
+}
+
+function downloadBin() {
+  if (!tflBuf) { alert('Please train a model first.'); return; }
+  const blob = new Blob([tflBuf], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'model.bin';
+  a.click();
+}
+
+initMics();
+initDSP();
+
+// Initialize dashboard with the Transfer Learning template classes
+classes = [
+  { name: 'Background_Noise', clips: [], poses: [], images: [], color: '#8c9bb4' },
+  { name: 'Man_Speaking', clips: [], poses: [], images: [], color: '#2f69ff' },
+  { name: 'Woman_Speaking', clips: [], poses: [], images: [], color: '#e91e63' },
+  { name: 'Command_ON', clips: [], poses: [], images: [], color: '#00e676' },
+  { name: 'Command_OFF', clips: [], poses: [], images: [], color: '#ff3d00' }
+];
+renderClasses();
+initYAMNet(); // Kick off async loading of the massive YAMNet backbone immediately on page load
+
+// ==========================================
+// WEBSERIAL ONE-CLICK DEPLOYMENT LOGIC
+// ==========================================
+let serialPort = null;
+let serialReader = null;
+let serialWriter = null;
+let serialRxText = '';
+const serialEncoder = new TextEncoder();
+const serialDecoder = new TextDecoder();
+let serialReading = false;
+
+function setSerialStatus(msg, isError=false) {
+  const el = document.getElementById('serial-status');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isError ? 'var(--red)' : 'var(--green)';
+  }
+}
+
+function logSerial(msg) {
+  const logBox = document.getElementById('serial-log');
+  if (logBox) {
+    logBox.textContent += msg + '\n';
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+}
+
+async function writeSerial(text) {
+  if (serialWriter) {
+    await serialWriter.write(serialEncoder.encode(text));
+  }
+}
+
+async function writeSerialBytes(buffer) {
+  if (serialWriter) {
+    await serialWriter.write(buffer);
+  }
+}
+
+async function readSerialLine(timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const nl = serialRxText.indexOf('\n');
+    if (nl >= 0) {
+      const line = serialRxText.slice(0, nl).replace(/\r/g, '');
+      serialRxText = serialRxText.slice(nl + 1);
+      return line;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('Serial timeout');
+    
+    // We expect the global serial read loop to populate serialRxText.
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
+async function expectSerial(matchFn, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const line = await readSerialLine(timeoutMs);
+    if (line.startsWith('SERIAL ERR')) throw new Error(line);
+    if (matchFn(line)) return line;
+  }
+  throw new Error('Serial timeout waiting for expected response');
+}
+
+async function sendCommand(command, okToken, timeoutMs = 10000) {
+  await writeSerial(command + '\n');
+  return expectSerial(line => line.includes('SERIAL OK ' + okToken), timeoutMs);
+}
+
+// Background loop to read serial stream continuously
+let monitorLineBuffer = '';
+async function readSerialLoop() {
+  serialReading = true;
+  while (serialPort && serialPort.readable && serialReading) {
+    try {
+      const { value, done } = await serialReader.read();
+      if (done) break;
+      const text = serialDecoder.decode(value, { stream: true });
+      serialRxText += text;
+      monitorLineBuffer += text;
+      
+      let newlineIdx;
+      while ((newlineIdx = monitorLineBuffer.indexOf('\n')) >= 0) {
+        let line = monitorLineBuffer.slice(0, newlineIdx).replace(/\r/g, '');
+        monitorLineBuffer = monitorLineBuffer.slice(newlineIdx + 1);
+        
+        if (line && !line.startsWith('SERIAL OK') && !line.startsWith('SERIAL READY')) {
+          logSerial(line);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      break;
+    }
+  }
+  serialReading = false;
+}
+
+async function connectAndUploadSerial() {
+  let payloadBuf;
+  if (!tflBuf) { alert("Please train the model first!"); return; }
+  payloadBuf = tflBuf;
+
+  if (!('serial' in navigator)) {
+    alert("Web Serial is not available in this browser. Please use Chrome or Edge desktop.");
+    return;
+  }
+
+  const btn = document.getElementById('usb-deploy-btn');
+  const prog = document.getElementById('serial-progress');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Connecting...';
+
+  try {
+    if (!serialPort) {
+      serialPort = await navigator.serial.requestPort();
+      await serialPort.open({ baudRate: 115200, bufferSize: 8192 });
+      
+      // Native USB CDC handshaking initialization
+      try {
+        await serialPort.setSignals({ dataTerminalReady: true, requestToSend: false });
+        await new Promise(r => setTimeout(r, 100));
+      } catch (e) {
+        console.log("Could not set signals", e);
+      }
+
+      serialReader = serialPort.readable.getReader();
+      serialWriter = serialPort.writable.getWriter();
+      readSerialLoop(); // Start background reader
+    }
+
+    setSerialStatus("Waiting for device...");
+    document.getElementById('serial-log').textContent = '';
+    prog.style.display = 'block';
+    prog.value = 0;
+
+    // Ping loop until device is ready
+    let ready = false;
+    for (let i = 0; i < 20; i++) {
+      await writeSerial('PING\n');
+      try {
+        const line = await expectSerial(l => l.includes('SERIAL OK PONG') || l.includes('SERIAL READY'), 1000);
+        if (line) {
+          ready = true;
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (!ready) {
+      throw new Error("Device not responding. Please check connection and try again.");
+    }
+
+    setSerialStatus("Uploading...");
+    btn.innerHTML = '🚀 Uploading...';
+    
+    const totalBytes = payloadBuf.byteLength;
+    if (appMode === 'IMAGE' || appMode === 'POSE') {
+      await sendCommand('MODEL_BEGIN', 'MODEL_BEGIN', 10000);
+    } else {
+      await sendCommand('MODEL_BEGIN ' + totalBytes, 'MODEL_BEGIN', 10000);
+    }
+
+    const chunkSize = 128;
+    for (let offset = 0; offset < totalBytes; offset += chunkSize) {
+      const chunk = new Uint8Array(payloadBuf.slice(offset, Math.min(offset + chunkSize, totalBytes)));
+      await writeSerial('MODEL_CHUNK ' + offset + ' ' + chunk.length + '\n');
+      await new Promise(r => setTimeout(r, 10)); // Give ESP32 time to parse command
+      await writeSerialBytes(chunk);
+      await expectSerial(l => l.includes('SERIAL OK MODEL_CHUNK'), 15000);
+      prog.value = Math.round(((offset + chunk.length) * 100) / totalBytes);
+    }
+
+    if (appMode === 'IMAGE' || appMode === 'POSE') {
+      await sendCommand('MODEL_END', 'MODEL_END', 15000);
+    } else {
+      await sendCommand('MODEL_END ' + totalBytes, 'MODEL_END', 15000);
+    }
+    
+    setSerialStatus("Rebooting device...", false);
+    btn.innerHTML = '🔄 Rebooting...';
+    
+    if (appMode === 'VOICE') {
+      await sendCommand('LOAD', 'LOAD', 5000);
+    }
+    
+    setSerialStatus("Running Live", false);
+    btn.innerHTML = '🚀 Deploy to Device (USB WebSerial)';
+    btn.disabled = false;
+    
+  } catch (err) {
+    setSerialStatus(err.message || "Upload failed", true);
+    btn.innerHTML = '🚀 Deploy to Device (USB WebSerial)';
+    btn.disabled = false;
+    console.error(err);
+  }
+}
+
+</script>
+</body>
+</html>

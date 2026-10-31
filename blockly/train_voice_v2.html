@@ -1,0 +1,3654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Voice Training v2 — Variable Clip Length</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.10.0/dist/tf-backend-wasm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f8fafc;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            background: #fff; padding: 12px 20px;
+            border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06); flex-shrink: 0;
+        }
+        .back-btn { padding: 8px 14px; background: #f1f5f9; border: none;
+            border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #475569; }
+        .back-btn:hover { background: #e2e8f0; }
+        .header h1 { font-size: 18px; font-weight: 700; color: #1e293b; }
+        .header-badge { font-size: 11px; font-weight: 700;
+            background: linear-gradient(135deg, #7c3aed, #06b6d4);
+            color: #fff; padding: 3px 10px; border-radius: 10px; margin-left: 8px; }
+        .deploy-btn { padding: 8px 16px; background: #f54254; color: #fff; border: none;
+            border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 700; transition: opacity .2s; }
+        .deploy-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .deploy-btn:not(:disabled):hover { opacity: .85; }
+        .reset-btn { padding: 8px 14px; background: #fef3c7; border: 1.5px solid #fcd34d;
+            border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+            color: #92400e; transition: background .15s; }
+        .reset-btn:hover { background: #fde68a; }
+
+        .status-bar { background: #f1f5f9; padding: 6px 20px; font-size: 13px;
+            color: #475569; min-height: 30px; flex-shrink: 0; }
+
+        .columns { display: flex; flex-direction: row; gap: 16px; padding: 16px;
+            overflow-x: auto; overflow-y: hidden; flex: 1; align-items: stretch; }
+        .col { width: 340px; flex-shrink: 0; overflow-y: auto; overflow-x: hidden; max-height: 100%; }
+        .col::-webkit-scrollbar { width: 3px; }
+        .col::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+        .col-title { font-size: 15px; font-weight: 700; color: #374151; margin-bottom: 12px; }
+        .input-mode-bar { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+            padding: 10px 12px; margin-bottom: 12px; }
+        .input-mode-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .input-mode-label { font-size: 13px; font-weight: 600; color: #334155; }
+        .input-mode-select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 8px;
+            font-size: 12px; background: #fff; cursor: pointer; }
+        .input-mode-select:focus { outline: none; border-color: #7c3aed; }
+        .input-setting-panel { display: none; margin-top: 10px; padding-top: 10px;
+            border-top: 1px dashed #cbd5e1; }
+        .input-setting-panel.visible { display: block; }
+        .input-set-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .input-set-lbl { font-size: 11px; color: #64748b; min-width: 92px; }
+        .input-set-select { flex: 1; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 6px;
+            font-size: 11px; background: #fff; max-width: 100%; }
+        .input-agc-toggle { display: flex; gap: 12px; font-size: 11px; color: #334155; }
+        .input-agc-toggle label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+        .input-gain-slider { flex: 1; accent-color: #7c3aed; }
+        .input-gain-val { font-size: 11px; color: #334155; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+        .input-gain-num { width: 52px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 5px;
+            font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+        .input-gain-num:focus { outline: none; border-color: #7c3aed; }
+        .input-gain-unit { font-size: 11px; color: #64748b; }
+        .input-set-hint { font-size: 10px; color: #94a3b8; }
+        .relevel-btn { font-size: 11px; padding: 5px 10px; background: #eef2ff; color: #4338ca;
+            border: 1px solid #c7d2fe; border-radius: 5px; cursor: pointer; }
+        .relevel-btn:hover { background: #e0e7ff; }
+        .relevel-btn:disabled { opacity: .5; cursor: default; }
+        .input-level-meter { flex: 1; position: relative; height: 10px; background: #e2e8f0;
+            border-radius: 5px; overflow: hidden; }
+        .input-level-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#22c55e,#eab308,#ef4444);
+            transition: width .05s linear; }
+        .input-level-clip { position: absolute; top: 0; right: 0; width: 8%; height: 100%;
+            background: #ef4444; opacity: 0; }
+        .input-level-clip.active { opacity: 1; }
+        .input-level-val { font-size: 11px; color: #334155; min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+        .input-set-note { font-size: 10px; color: #94a3b8; line-height: 1.5; margin-top: 4px; }
+        .arrow { display: flex; align-items: flex-start; padding-top: 180px;
+            font-size: 28px; color: #cbd5e1; flex-shrink: 0; align-self: flex-start; }
+
+        .clip-size-bar {
+            background: #fff; border-radius: 12px; padding: 12px 14px;
+            margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+        }
+        .clip-size-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+        .clip-len-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
+        .cl-btn {
+            padding: 8px 4px; background: #f1f5f9; border: 1.5px solid #e2e8f0;
+            color: #64748b; border-radius: 8px; font-size: 13px; font-weight: 600;
+            cursor: pointer; text-align: center; transition: all .15s;
+        }
+        .cl-btn:hover { border-color: #7c3aed; color: #7c3aed; }
+        .cl-btn.active { background: #f5f3ff; border-color: #7c3aed; color: #7c3aed; font-weight: 700; }
+        .cl-hint { font-size: 11px; color: #94a3b8; margin-top: 8px; line-height: 1.6; }
+
+        .model-load-bar {
+            background: #fff; border-radius: 12px; padding: 12px 14px;
+            margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+            border-left: 4px solid #7c3aed;
+        }
+        .model-load-title { font-size: 13px; font-weight: 700; color: #374151;
+            margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+        .model-load-status { font-size: 11px; color: #94a3b8; line-height: 1.5; }
+        .model-load-track { width: 100%; height: 3px; background: #f1f5f9;
+            border-radius: 2px; margin-top: 8px; overflow: hidden; }
+        .model-load-fill { height: 100%; background: #7c3aed;
+            border-radius: 2px; transition: width .3s ease; width: 0%; }
+
+        .class-card { background: #fff; border-radius: 12px; padding: 14px;
+            margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+            border-left: 4px solid #ccc; }
+        .class-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .class-name { flex: 1; font-size: 15px; font-weight: 700; border: none;
+            border-bottom: 1.5px solid #e2e8f0; outline: none;
+            background: transparent; padding-bottom: 2px; }
+        .sample-count { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+        .remove-btn { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px; }
+        .remove-btn:hover { color: #ef4444; }
+
+        .mic-vis-wrap { position: relative; background: #0f172a; border-radius: 8px;
+            height: 72px; overflow: hidden; margin-bottom: 8px; }
+        .mic-vis-canvas { width: 100%; height: 100%; display: block; }
+        .mic-vis-label { position: absolute; top: 6px; left: 10px; font-size: 10px;
+            font-weight: 700; color: #ef4444; text-transform: uppercase;
+            letter-spacing: .08em; display: flex; align-items: center; gap: 5px; }
+        .mic-vis-count { position: absolute; top: 6px; right: 10px;
+            font-size: 10px; font-weight: 700; color: #475569; font-family: monospace; }
+        .rec-progress { position: absolute; bottom: 5px; left: 8px; right: 8px;
+            height: 3px; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden; }
+        .rec-progress-fill { height: 100%; background: #ef4444; border-radius: 2px;
+            width: 0%; transition: width .05s linear; }
+
+        .add-btns { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        .add-btn { flex: 1; padding: 10px; border-radius: 8px; border: 1.5px solid;
+            min-width: 82px; cursor: pointer; font-size: 13px; font-weight: 600;
+            background: transparent; transition: opacity .15s; }
+        .add-btn:hover { opacity: .75; }
+        .k230-mic-btn { color: #d97706; border-color: #f59e0b;
+            background: rgba(245,158,11,.08); }
+        .k230-mic-btn:disabled { opacity: .55; cursor: wait; }
+        .esp32-mic-btn { color: #2563eb; border-color: #3b82f6;
+            background: rgba(59,130,246,.08); }
+        .esp32-mic-btn:disabled { opacity: .55; cursor: wait; }
+        .cam-btns { display: flex; gap: 8px; margin-top: 4px; }
+        .hold-btn { flex: 1; padding: 10px; border: none; border-radius: 8px;
+            color: #fff; font-weight: 700; cursor: pointer; font-size: 13px;
+            user-select: none; -webkit-user-select: none; transition: opacity .15s; }
+        .stop-btn { padding: 10px 16px; border: none; border-radius: 8px;
+            background: #f1f5f9; color: #64748b; font-weight: 600; cursor: pointer; }
+        .stop-btn:hover { background: #e2e8f0; }
+
+        .thumbs { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+        .thumb { position: relative; }
+        .thumb canvas { width: 48px; height: 28px; border-radius: 4px; background: #0f172a; display: block; }
+        .thumb-del { position: absolute; top: -4px; right: -4px; width: 15px; height: 15px;
+            background: #ef4444; color: #fff; border: none; border-radius: 50%;
+            cursor: pointer; font-size: 8px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; }
+        .thumb-play { position: absolute; bottom: -4px; right: -4px; width: 15px; height: 15px;
+            background: #3b82f6; color: #fff; border: none; border-radius: 50%;
+            cursor: pointer; font-size: 7px;
+            display: flex; align-items: center; justify-content: center; }
+        .thumb-play:hover { background: #2563eb; }
+        .thumb-play.playing { background: #7c3aed; }
+
+        .class-actions { display: flex; gap: 6px; margin-top: 8px; }
+        .extract-btn-card { flex: 1; padding: 8px; border-radius: 8px; border: 1.5px solid;
+            font-size: 12px; font-weight: 700; cursor: pointer; background: transparent;
+            transition: opacity .15s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+        .extract-btn-card:disabled { opacity: .35; cursor: not-allowed; }
+        .extract-btn-card:not(:disabled):hover { opacity: .75; }
+        .download-btn-card { flex: 1; padding: 8px; border-radius: 8px;
+            border: 1.5px solid #10b981; font-size: 12px; font-weight: 700;
+            cursor: pointer; background: transparent; color: #10b981;
+            transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+        .download-btn-card:hover { background: #f0fdf4; }
+
+        .noise-badge { font-size: 10px; font-weight: 700; color: #5b21b6;
+            background: #ede9fe; padding: 2px 8px; border-radius: 10px;
+            display: inline-block; margin-bottom: 8px; }
+        .noise-hint { font-size: 11px; color: #5b21b6; background: #f5f3ff;
+            border-radius: 6px; padding: 6px 10px; margin-top: 4px; }
+
+        .add-class-btn { border: 2px dashed #e2e8f0; border-radius: 10px; padding: 14px;
+            text-align: center; color: #94a3b8; cursor: pointer; font-weight: 600;
+            font-size: 14px; background: none; width: 100%; margin-top: 4px; transition: border-color .15s; }
+        .add-class-btn:hover { border-color: #94a3b8; }
+        .add-class-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .add-noise-btn { border: 2px dashed #7c3aed; border-radius: 10px; padding: 10px 14px;
+            text-align: center; color: #5b21b6; cursor: pointer; font-weight: 600;
+            font-size: 13px; background: #f5f3ff; width: 100%; margin-top: 8px; transition: all .15s; }
+        .add-noise-btn:hover { background: #ede9fe; }
+        .add-noise-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+        .tips-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px;
+            padding: 10px 14px; margin-top: 12px; font-size: 12px; color: #166534; line-height: 1.7; }
+        .dl-all-btn { width: 100%; margin-top: 10px; padding: 11px;
+            border: 1.5px solid #10b981; border-radius: 8px; background: transparent;
+            color: #10b981; font-size: 13px; font-weight: 700; cursor: pointer;
+            transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
+        .dl-all-btn:hover { background: #f0fdf4; }
+
+        .train-card { background: #fff; border-radius: 12px; padding: 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+        .state-ready { text-align: center; padding: 20px 0; }
+        .state-ready .icon { font-size: 36px; margin-bottom: 8px; }
+        .state-ready h3 { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+        .state-ready p { font-size: 12px; color: #94a3b8; }
+        .state-progress { text-align: center; padding: 20px 0; }
+        .progress-pct { font-size: 32px; font-weight: 800; color: #7c3aed; margin-bottom: 8px; }
+        .progress-bar { width: 100%; height: 6px; background: #f1f5f9; border-radius: 3px;
+            overflow: hidden; margin-bottom: 8px; }
+        .progress-fill { height: 100%; background: #7c3aed; border-radius: 3px; transition: width .2s ease; }
+        .progress-label { font-size: 13px; color: #94a3b8; }
+        .state-done { text-align: center; padding: 16px 0; }
+        .state-done .icon { font-size: 36px; margin-bottom: 8px; }
+        .state-done h3 { font-size: 17px; font-weight: 700; color: #10b981; margin-bottom: 4px; }
+        .state-done p { font-size: 13px; color: #94a3b8; }
+        .retrain-btn { margin-top: 8px; padding: 6px 16px; background: #f1f5f9; border: none;
+            border-radius: 6px; color: #64748b; font-weight: 600; font-size: 13px; cursor: pointer; }
+        .train-btn { width: 100%; padding: 14px; background: #7c3aed; color: #fff;
+            border: none; border-radius: 10px; font-size: 16px; font-weight: 800;
+            cursor: pointer; margin-top: 16px; transition: opacity .2s; }
+        .train-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .train-btn:not(:disabled):hover { opacity: .85; }
+        .stats { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+        .stat-row { display: flex; align-items: center; gap: 8px; }
+        .stat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .stat-name { flex: 1; font-size: 13px; color: #374151; font-weight: 500; }
+        .stat-count { font-size: 13px; color: #94a3b8; font-weight: 600; }
+
+        .pipeline-box { margin-top: 16px; background: #f8fafc; border: 1px solid #e2e8f0;
+            border-radius: 8px; padding: 12px; }
+        .pipeline-title { font-size: 11px; font-weight: 700; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+        .pipeline-step { display: flex; align-items: center; gap: 8px;
+            font-size: 11px; color: #64748b; padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
+        .pipeline-step:last-child { border-bottom: none; }
+        .pipeline-step span:first-child { font-size: 13px; flex-shrink: 0; }
+
+        .embed-info-box { margin-top: 10px; background: #f0fdf4; border: 1px solid #86efac;
+            border-radius: 8px; padding: 10px 12px; font-size: 11px; color: #166534; line-height: 1.6; }
+
+        .preview-card { background: #fff; border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: visible; }
+        .preview-header { padding: 14px 16px 10px; border-bottom: 1px solid #f1f5f9;
+            display: flex; align-items: center; justify-content: space-between; }
+        .preview-title { font-size: 14px; font-weight: 700; color: #374151; }
+        .model-badge { font-size: 10px; font-weight: 700;
+            background: linear-gradient(135deg, #7c3aed, #06b6d4);
+            color: #fff; padding: 2px 8px; border-radius: 10px; }
+
+        .preview-vis-wrap { background: #0f172a; height: 80px; position: relative; overflow: hidden; flex-shrink: 0; }
+        .preview-vis-canvas { width: 100%; height: 100%; display: block; }
+        .preview-placeholder { position: absolute; inset: 0; display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+            color: #334155; font-size: 13px; gap: 6px; }
+        .preview-placeholder .mic-icon { font-size: 28px; }
+
+        .detect-status { padding: 12px 16px; border-bottom: 1px solid #f1f5f9;
+            min-height: 56px; display: flex; align-items: center; gap: 10px; transition: all .2s; }
+
+        .output-section { padding: 14px 16px; }
+        .output-title { font-size: 11px; font-weight: 700; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
+        .output-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .output-label { width: 80px; font-size: 13px; font-weight: 700; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+        .output-bar-wrap { flex: 1; height: 28px; background: #f1f5f9;
+            border-radius: 6px; overflow: hidden; position: relative; }
+        .output-bar-fill { height: 100%; border-radius: 6px; display: flex;
+            align-items: center; justify-content: flex-end; padding-right: 8px;
+            min-width: 0; transition: width .12s ease; }
+        .output-bar-pct { font-size: 12px; font-weight: 800; color: #fff; white-space: nowrap; }
+        .output-bar-pct-outside { position: absolute; right: 8px; top: 50%;
+            transform: translateY(-50%); font-size: 12px; font-weight: 700; color: #94a3b8; }
+
+        .threshold-wrap { padding: 10px 16px; background: #fafafa; border-top: 1px solid #f1f5f9; }
+        .threshold-label { display: flex; justify-content: space-between;
+            font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 5px; }
+        .threshold-slider { width: 100%; accent-color: #7c3aed; cursor: pointer; }
+
+        .action-wrap { padding: 12px 16px 16px; }
+        .action-btn { width: 100%; padding: 14px; border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 800; cursor: pointer; margin-top: 8px;
+            color: #fff; transition: opacity .2s; }
+        .action-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .action-btn:not(:disabled):hover { opacity: .85; }
+        .btn-test        { background: #06b6d4; }
+        .btn-test-k230   { background: #f59e0b; }
+        .btn-test-esp32  { background: #3b82f6; }
+        .btn-deploy      { background: #7c3aed; }
+        .btn-export      { background: #10b981; }
+        .btn-deploy-k230 { background: #f59e0b; }
+        .btn-reset-k230  { background: #ea580c; }
+        .btn-export-esp32 { background: #3b82f6; }
+
+        .k230-settings { margin-top: 12px; font-size: 12px; color: #64748b;
+            background: #f8fafc; padding: 10px; border-radius: 8px;
+            border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 7px; }
+        .k230-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .k230-input { border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 6px;
+            font-size: 12px; outline: none; color: #1e293b; font-weight: 600; background: #fff; }
+        .k230-input:focus { border-color: #7c3aed; }
+        .k230-select { border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 6px;
+            font-size: 12px; font-weight: 600; color: #1e293b; background: #fff; cursor: pointer; outline: none; }
+
+        .usb-progress-panel { display: none; background: #0f172a; border-radius: 8px;
+            padding: 12px 14px; margin-top: 10px; border: 1px solid #1e293b; }
+        .usb-progress-panel.visible { display: block; }
+        .usb-progress-title { font-size: 11px; font-weight: 700; color: #64748b;
+            text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px;
+            display: flex; align-items: center; gap: 6px; }
+        .usb-file-row { margin-bottom: 8px; }
+        .usb-file-label { font-size: 11px; font-weight: 600; color: #94a3b8;
+            margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .usb-file-label span:last-child { color: #f59e0b; font-family: monospace; }
+        .usb-file-bar { width: 100%; height: 5px; background: #1e293b; border-radius: 3px; overflow: hidden; }
+        .usb-file-fill { height: 100%; border-radius: 3px; transition: width .1s linear; width: 0%; }
+        .usb-log { font-family: 'Courier New', monospace; font-size: 10px; color: #475569;
+            margin-top: 8px; line-height: 1.7; max-height: 60px; overflow-y: auto; }
+        .usb-log .ok   { color: #10b981; }
+        .usb-log .err  { color: #ef4444; }
+        .usb-log .warn { color: #f59e0b; }
+        .usb-log .info { color: #38bdf8; }
+
+        .hint { font-size: 11px; color: #94a3b8; text-align: center; margin-top: 10px; line-height: 1.6; }
+        .spinner { display: inline-block; width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+            border-radius: 50%; animation: spin .7s linear infinite;
+            vertical-align: middle; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .pulse-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+            background: #f59e0b; animation: pulseD 1.4s ease infinite; }
+        @keyframes pulseD { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.7)} }
+        .rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            background: #ef4444; animation: recB .6s ease infinite alternate; }
+        @keyframes recB { from{opacity:1} to{opacity:.2} }
+
+        .btn-deploy-esp32 { background: #eab308; }
+        .btn-deploy-esp32-full { background: #16a34a; }
+        .btn-reset-esp32 { background: #b45309; }
+        .serial-panel {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 14px;
+            background: #1e1b4b;
+            border-radius: 8px;
+            border: 1px solid #4c1d95;
+        }
+        .serial-panel.active { display: block; }
+        .serial-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #c4b5fd;
+        }
+        .serial-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #6b7280;
+            flex-shrink: 0;
+            transition: background 0.3s;
+        }
+        .serial-dot.connected { background: #4ade80; }
+        .serial-log {
+            display: none;
+            margin-top: 8px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #86efac;
+            background: #071016;
+            border-radius: 4px;
+            padding: 8px;
+            max-height: 130px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .serial-log.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+    <button class="back-btn" onclick="goBack()">&#x2190; Workspace</button>
+    <h1>Voice Training <span class="header-badge">&#x1F3A4; Audio ML v2</span></h1>
+    <div style="display:flex;gap:8px;align-items:center">
+        <button class="reset-btn" onclick="resetAll()">&#x1F504; Reset</button>
+        <button class="deploy-btn" id="deployHeaderBtn" onclick="deployToBlockly()" disabled>
+            Deploy to Blocks &#x2192;
+        </button>
+    </div>
+</div>
+
+<div class="status-bar" id="statusBar">Loading Speech Commands backbone &#x2014; please wait&#x2026;</div>
+
+<div class="columns">
+
+    <!-- Column 1: Collect -->
+    <div class="col">
+        <div class="col-title">1. Collect Audio</div>
+
+        <!-- Input mode: Auto (default flow) vs Setting (manual laptop-mic input) -->
+        <div class="input-mode-bar">
+            <div class="input-mode-row">
+                <label class="input-mode-label" for="inputModeSelect">&#x1F3A4; Laptop Mic Input</label>
+                <select class="input-mode-select" id="inputModeSelect" onchange="setInputMode(this.value)">
+                    <option value="auto" selected>Auto (recommended)</option>
+                    <option value="setting">Setting (manual)</option>
+                </select>
+            </div>
+            <div class="input-setting-panel" id="inputSettingPanel">
+                <div class="input-set-row">
+                    <label class="input-set-lbl" for="micDeviceSelect">Microphone</label>
+                    <select class="input-set-select" id="micDeviceSelect" onchange="onMicDeviceChange()">
+                        <option value="">Default</option>
+                    </select>
+                </div>
+                <div class="input-set-row">
+                    <label class="input-set-lbl">Auto Gain Control</label>
+                    <div class="input-agc-toggle">
+                        <label><input type="radio" name="agcMode" value="off" checked onchange="onAgcChange('off')"> Off</label>
+                        <label><input type="radio" name="agcMode" value="on" onchange="onAgcChange('on')"> On</label>
+                    </div>
+                </div>
+                <div class="input-set-row">
+                    <label class="input-set-lbl">Level Mode</label>
+                    <div class="input-agc-toggle">
+                        <label><input type="radio" name="levelMode" value="manual" checked onchange="onLevelModeChange('manual')"> Manual gain</label>
+                        <label><input type="radio" name="levelMode" value="target" onchange="onLevelModeChange('target')"> Target level</label>
+                    </div>
+                </div>
+                <div class="input-set-row" id="manualGainRow">
+                    <label class="input-set-lbl" for="inputGainSlider">Input Gain</label>
+                    <input type="range" class="input-gain-slider" id="inputGainSlider" min="-12" max="24" step="1" value="0"
+                        oninput="onInputGainChange(this.value)">
+                    <input type="number" class="input-gain-num" id="inputGainNum" min="-12" max="24" step="1" value="0"
+                        onchange="onInputGainNum(this.value)">
+                    <span class="input-gain-unit">dB</span>
+                </div>
+                <div class="input-set-row" id="targetLevelRow" style="display:none">
+                    <label class="input-set-lbl" for="targetLevelNum">Target Level</label>
+                    <input type="number" class="input-gain-num" id="targetLevelNum" min="-40" max="-3" step="1" value="-20"
+                        onchange="onTargetLevelChange(this.value)">
+                    <span class="input-gain-unit">dBFS</span>
+                    <span class="input-set-hint" id="targetHint">new clips auto-held here</span>
+                </div>
+                <div class="input-set-row" id="relevelRow" style="display:none">
+                    <label class="input-set-lbl">Existing clips</label>
+                    <button class="relevel-btn" id="relevelBtn" onclick="relevelAllClips()">&#x21BB; Re-level all clips &#x2192; target</button>
+                </div>
+                <div class="input-set-row">
+                    <label class="input-set-lbl">Level</label>
+                    <div class="input-level-meter"><div class="input-level-fill" id="inputLevelFill"></div>
+                        <div class="input-level-clip" id="inputLevelClip"></div></div>
+                    <span class="input-level-val" id="inputLevelVal">&#x2014; dBFS</span>
+                </div>
+                <div class="input-set-note">
+                    Adjusts recording level &amp; clipping only. Detection accuracy is
+                    unaffected &mdash; every clip is auto-levelled (normalized) before the
+                    model reads it. Settings are saved and apply to the <b>laptop mic</b>;
+                    open a class mic to preview the meter.
+                </div>
+            </div>
+        </div>
+
+        <div class="clip-size-bar">
+            <div class="clip-size-label">&#x1F39A;&#xFE0F; Clip Length</div>
+            <div class="clip-len-grid">
+                <button class="cl-btn" data-ms="1000" onclick="setClipLen(1000)">1.0 s</button>
+                <button class="cl-btn active" data-ms="1500" onclick="setClipLen(1500)">1.5 s</button>
+                <button class="cl-btn" data-ms="2000" onclick="setClipLen(2000)">2.0 s</button>
+                <button class="cl-btn" data-ms="3000" onclick="setClipLen(3000)">3.0 s</button>
+            </div>
+            <div class="cl-hint" id="clipLenHint">
+                Each clip is recorded for <b>1.5 sec</b>, sliced into
+                <b id="nWindows">3</b> overlapping 1-sec windows,
+                each embedded &#x2192; averaged &#x2192; 1 clip vector.
+            </div>
+        </div>
+
+        <div class="model-load-bar" id="modelLoadBar">
+            <div class="model-load-title">
+                <span id="modelLoadIcon">&#x23F3;</span>
+                <span id="modelLoadTitle">Loading pretrained backbone&#x2026;</span>
+            </div>
+            <div class="model-load-status" id="modelLoadStatus">
+                Downloading Speech Commands v2 (~5 MB). Runs once.
+            </div>
+            <div class="model-load-track">
+                <div class="model-load-fill" id="modelLoadFill"></div>
+            </div>
+        </div>
+
+        <div id="classList"></div>
+
+        <button class="add-class-btn" id="addClassBtn" onclick="addClass()" disabled>
+            + Add a Word / Sound
+        </button>
+        <button class="add-noise-btn" id="addNoiseBtn" onclick="addNoiseClass()" disabled>
+            &#x1F507; + Add Background Noise Class (recommended)
+        </button>
+
+        <div class="tips-box">
+            &#x1F4A1; <b>Tips for voice training:</b><br>
+            &#x2022; Speak immediately when you hold the button<br>
+            &#x2022; Longer clips &#x2192; more windows &#x2192; better accuracy<br>
+            &#x2022; 8&#x2013;12 clips per word is enough<br>
+            &#x2022; Always add a Background Noise class<br>
+            &#x2022; Record in the same room you&#x2019;ll use it
+        </div>
+
+        <button class="dl-all-btn" onclick="downloadAllClips()">
+            &#x2B07; Download All Clips (ZIP)
+        </button>
+    </div>
+
+    <div class="arrow">&#x2192;</div>
+
+    <!-- Column 2: Train -->
+    <div class="col">
+        <div class="col-title">2. Train Model</div>
+        <div class="train-card">
+            <div id="trainStateBox">
+                <div class="state-ready">
+                    <div class="icon">&#x1F9E0;</div>
+                    <h3>Ready to train.</h3>
+                    <p>Add at least 5 clips per class<br>then press Train.</p>
+                </div>
+            </div>
+            <button class="train-btn" id="trainBtn" onclick="trainModel()" disabled>
+                Train Model
+            </button>
+            <div class="stats" id="statList"></div>
+
+            <div class="pipeline-box">
+                <div class="pipeline-title">Pipeline</div>
+                <div class="pipeline-step">
+                    <span>&#x1F3A4;</span>
+                    <span>Record <span id="pbClipLen">1.5</span>s via mic</span>
+                </div>
+                <div class="pipeline-step">
+                    <span>&#x2702;&#xFE0F;</span>
+                    <span>Slice &#x2192; <span id="pbWindows">3</span> x 1s windows (50% overlap)</span>
+                </div>
+                <div class="pipeline-step">
+                    <span>&#x1F52C;</span>
+                    <span>Backbone &#x2192; <span id="pbEmbedDim">?</span>-dim embedding per window</span>
+                </div>
+                <div class="pipeline-step">
+                    <span>&#x1F4D0;</span>
+                    <span>Average window embeddings &#x2192; 1 clip vector</span>
+                </div>
+                <div class="pipeline-step">
+                    <span>&#x1F3CB;&#xFE0F;</span>
+                    <span>Train MLP head on clip vectors</span>
+                </div>
+            </div>
+
+            <div class="embed-info-box" id="embedInfoBox" style="display:none">
+                <b>&#x1F52C; Embedding Layer:</b> <span id="embedLayerName">&#x2014;</span><br>
+                <b>&#x1F4D0; Embedding Dim:</b> <span id="embedLayerDim">&#x2014;</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="arrow">&#x2192;</div>
+
+    <!-- Column 3: Preview & Deploy -->
+    <div class="col">
+        <div class="col-title">3. Preview &amp; Deploy</div>
+        <div class="preview-card">
+
+            <div class="preview-header">
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span class="preview-title">Live Preview</span>
+                    <span class="model-badge">Manual Pipeline</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                    <button class="action-btn btn-test" id="micBtn"
+                        onclick="toggleMic()" disabled
+                        style="width:auto;padding:6px 10px;font-size:12px;margin-top:0">
+                        Laptop Mic
+                    </button>
+                    <button class="action-btn btn-test-k230" id="k230InferBtn"
+                        onclick="toggleK230Inference()" disabled
+                        style="width:auto;padding:6px 10px;font-size:12px;margin-top:0">
+                        K230 Mic
+                    </button>
+                    <button class="action-btn btn-test-esp32" id="esp32InferBtn"
+                        onclick="toggleEsp32Inference()" disabled
+                        style="width:auto;padding:6px 10px;font-size:12px;margin-top:0">
+                        ESP32-S3 Mic
+                    </button>
+                </div>
+            </div>
+
+            <div class="preview-vis-wrap">
+                <canvas id="waveCanvas" class="preview-vis-canvas"></canvas>
+                <div class="preview-placeholder" id="wavePlaceholder">
+                    <div class="mic-icon">&#x1F3A4;</div>
+                    <div>Start a microphone to preview</div>
+                    <div style="font-size:11px;color:#334155">Sliding-window inference every <span id="inferDisplay">500</span>ms</div>
+                </div>
+            </div>
+
+            <div class="detect-status" id="detectStatus">
+                <div style="width:36px;height:36px;border-radius:50%;background:#f1f5f9;
+                     display:flex;align-items:center;justify-content:center;
+                     font-size:18px;flex-shrink:0">&#x1F50D;</div>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#94a3b8">Not Detected</div>
+                    <div style="font-size:11px;color:#cbd5e1;margin-top:1px">Train model and start mic</div>
+                </div>
+            </div>
+
+            <div class="output-section">
+                <div class="output-title">Output</div>
+                <div id="outputBars"></div>
+            </div>
+
+            <div class="threshold-wrap">
+                <div class="threshold-label">
+                    <span>Detection Threshold</span>
+                    <span id="thresholdValue">80%</span>
+                </div>
+                <input type="range" class="threshold-slider" id="thresholdSlider"
+                    min="50" max="99" value="80" oninput="updateThresh(this.value)"/>
+                <div style="margin-top:8px">
+                    <div class="threshold-label">
+                        <span>Inference Interval</span>
+                        <span id="threshDisplay2">500ms</span>
+                    </div>
+                    <input type="range" class="threshold-slider" style="accent-color:#f59e0b"
+                        min="200" max="1000" value="500" step="100"
+                        oninput="updateInferInterval(this.value)"/>
+                </div>
+            </div>
+
+            <div class="action-wrap">
+                <button class="action-btn btn-deploy" id="deployCardBtn"
+                    onclick="deployToBlockly()" disabled>Deploy to Blockly</button>
+                <button class="action-btn btn-deploy-k230" id="deployK230Btn"
+                    onclick="deployToK230()" disabled>&#x1F680; Deploy to K230</button>
+                <button class="action-btn btn-reset-k230" id="resetK230BoardBtn"
+                    onclick="resetK230VoiceBoard()">↻ Reset K230 Board</button>
+                <button class="action-btn btn-export" id="exportBtn"
+                    onclick="exportKmodel()" disabled>Export .kmodel (Local)</button>
+                <button class="action-btn btn-export-esp32" id="exportEsp32Btn"
+                    onclick="exportVoiceTflite()" disabled>Export .tflite (ESP32-S3)</button>
+                <button class="action-btn btn-deploy-esp32" id="deployEsp32Btn"
+                    onclick="deployVoiceToEsp32()" disabled>🔌 Deploy to ESP32 (WebSerial)</button>
+                <button class="action-btn btn-deploy-esp32-full" id="deployEsp32FullBtn"
+                    onclick="deployVoiceFullToEsp32()" disabled
+                    title="Converts the exact model the preview runs (backbone + head) to INT8 TFLite — on-device accuracy matches the preview, like the K230 path.">
+                    🚀 Deploy Preview Model (ESP32)</button>
+                <button class="action-btn btn-reset-esp32" id="resetEsp32BoardBtn"
+                    onclick="resetEsp32VoiceBoard()">↻ Reset ESP32-S3 Board</button>
+                <div class="serial-panel" id="serialPanel">
+                    <div class="serial-bar">
+                        <div class="serial-dot" id="serialDot"></div>
+                        <span id="serialStatusMsg">Click Deploy to ESP32 (WebSerial) to upload directly.</span>
+                    </div>
+                    <div class="serial-log" id="serialLog"></div>
+                </div>
+
+                <div class="k230-settings">
+                    <div class="k230-row">
+                        <span>Method:</span>
+                        <select class="k230-select" id="deployMethodInput"
+                            onchange="onDeployMethodChange(this.value)">
+                            <option value="wifi" selected>Wi-Fi</option>
+                            <option value="usb">USB (WebSerial)</option>
+                        </select>
+                    </div>
+                    <div class="k230-row" id="wifiRow">
+                        <span>K230 IP:</span>
+                        <input type="text" class="k230-input" id="k230IpInput"
+                            value="192.168.4.1" style="width:110px">
+                        <span>Port:</span>
+                        <input type="text" class="k230-input" id="k230PortInput"
+                            value="8080" style="width:50px">
+                    </div>
+                    <div class="k230-row" id="usbBaudRow" style="display:none">
+                        <span>Baud:</span>
+                        <select class="k230-select" id="usbBaudSelect">
+                            <option value="115200">115200 &#x2014; safe</option>
+                            <option value="921600" selected>921600 &#x2014; fast</option>
+                            <option value="1500000">1500000 &#x2014; faster</option>
+                            <option value="3000000">3000000 &#x2014; fastest</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="usb-progress-panel" id="usbProgressPanel">
+                    <div class="usb-progress-title">
+                        <span class="pulse-dot"></span> USB Transfer
+                    </div>
+                    <div class="usb-file-row">
+                        <div class="usb-file-label">
+                            <span>voice_v2_model.kmodel</span><span id="usbFile1Pct">0%</span>
+                        </div>
+                        <div class="usb-file-bar">
+                            <div class="usb-file-fill" id="usb1Fill" style="background:#f59e0b"></div>
+                        </div>
+                    </div>
+                    <div class="usb-file-row">
+                        <div class="usb-file-label">
+                            <span>voice_v2_labels.txt</span><span id="usbFile2Pct">0%</span>
+                        </div>
+                        <div class="usb-file-bar">
+                            <div class="usb-file-fill" id="usb2Fill" style="background:#38bdf8"></div>
+                        </div>
+                    </div>
+                    <div class="usb-log" id="usbLog"></div>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                    <span style="font-size:12px;color:#64748b;white-space:nowrap;">Backend URL:</span>
+                    <input id="backendUrlInput" type="text" style="width:100%;max-width:320px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;" title="Local backend server URL" />
+                </div>
+
+                <p class="hint">
+                    <b>Deploy to Blockly</b> adds voice AI blocks.<br>
+                    <b>Deploy to K230</b> pushes model to board.<br>
+                    <b>Reset K230 / ESP32-S3</b> restarts the selected board through USB.<br>
+                    <b>Export</b> downloads files locally.
+                </p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+'use strict';
+
+function _detectBackendUrl() {
+    const origin = window.location.origin;
+    if (origin.includes('trycloudflare.com') || origin.includes('localhost:5002')) {
+        return origin; // served via tunnel or windows_agent — use as-is
+    }
+    return 'http://localhost:5002'; // fallback for local dev / Expo WebView
+}
+
+const CONVERT_SERVER = _detectBackendUrl();
+
+window.addEventListener('DOMContentLoaded', () => {
+    const inputEl = document.getElementById('backendUrlInput');
+    if (inputEl) inputEl.value = CONVERT_SERVER;
+    if (typeof loadInputSettings === 'function') loadInputSettings();
+});
+
+function getBackendUrl() {
+    const input = document.getElementById('backendUrlInput');
+    let url = input?.value?.trim() || CONVERT_SERVER;
+    if (url.endsWith('/')) url = url.slice(0, -1);
+    return url;
+}
+
+async function postToBackend(endpoint, formData) {
+    const backendUrl = getBackendUrl();
+    const url = `${backendUrl}/${endpoint}`;
+    try {
+        const resp = await fetch(url, { method: 'POST', body: formData });
+        if (!resp.ok) {
+            const text = await resp.text().catch(() => null);
+            let message = `Server error ${resp.status}`;
+            if (text) {
+                try {
+                    const body = JSON.parse(text);
+                    message = body.error || text;
+                } catch {
+                    message = text;
+                }
+            }
+            throw new Error(message);
+        }
+        return resp;
+    } catch (err) {
+        throw new Error(`Backend request failed: ${url} — ${err.message}`);
+    }
+}
+
+// Bytes of raw file data per REPL round trip. Each round trip is one full
+// compile+exec cycle on the board (~15-25 ms), so this constant — not the baud
+// rate — sets the deploy time for a multi-megabyte .kmodel. Both are multiples
+// of 3 so base64 chunks never carry mid-stream padding.
+//
+// Raw-paste mode has a window handshake, so the host cannot outrun the board's
+// input buffer and the chunk can be large. Classic raw REPL has no flow control
+// at all: this board truncates a multi-kilobyte statement mid-string-literal,
+// and the surviving base64 then lexes as an identifier ("RuntimeError: name too
+// long"). So the classic path stays near the size it has proven it can absorb.
+const CHUNK_BYTES         = 4095;
+const CHUNK_BYTES_CLASSIC = 384;
+const SERIAL_SUPPORTED = 'serial' in navigator;
+const SR               = 16000;
+const WINDOW_SAMPLES   = 16000;
+const HOP_SAMPLES      = 8000;
+
+let MODEL_FRAMES = 43;
+let MODEL_BINS   = 232;
+const FFT_WIN    = 1024;
+
+let CLIP_MS     = 1500;
+let THRESH      = 0.80;
+let INFER_MS    = 500;
+
+let recognizer     = null;
+let backbone       = null;
+let embedExtractor = null;
+let EMBED_DIM      = 0;
+
+let headModel      = null;
+let trained        = false;
+let classNamesCopy = [];
+
+let embeddings  = {};
+let classAudio  = {};
+
+let classes = [
+    {id:1, name:'Word1', color:'#4ade80'},
+    {id:2, name:'Word2', color:'#60a5fa'},
+];
+let nextClassId = 3;
+const COLORS = ['#4ade80','#60a5fa','#f87171','#fbbf24','#a78bfa','#22d3ee','#fb923c','#e879f9'];
+
+let micStream    = null;
+let micAudioCtx  = null;
+let micAnalyser  = null;
+// Laptop-mic input Setting mode. Gain/AGC/device only affect the captured
+// waveform level; the per-spectrogram normalization downstream makes detection
+// independent of them (see the note in the Setting panel).
+let inputMode        = 'auto';   // 'auto' | 'setting'
+let inputLevelMode   = 'manual'; // 'manual' (fixed gain) | 'target' (auto-hold to a dBFS)
+let inputGainDb      = 0;        // manual gain, applied via a Web Audio GainNode
+let inputTargetDbfs  = -20;      // target-level mode: each clip auto-scaled to this dBFS
+let inputAgc         = false;    // autoGainControl constraint
+let inputMicDeviceId = '';       // '' = default device
+let micGainNode      = null;
+let micRecordDest    = null;     // MediaStreamAudioDestinationNode feeding MediaRecorder
+let micLevelRaf      = null;
+let activeMicIdx = null;
+let activeMicSource = null; // 'laptop', 'k230', or 'esp32'
+let isRecording  = false;
+let recStartTime = 0;
+let recProgTimer = null;
+
+let micActive    = false;
+let inferStream  = null;
+let inferCtx     = null;
+let inferAnalyser= null;
+let inferBuf     = null;
+let inferBufPos  = 0;
+let inferLastProcessedPos = -1;
+let esp32SmoothedProbs = null;
+let inferTimer   = null;
+let inferProc    = null;
+let visFrame     = null;
+let inferSource  = null; // 'laptop', 'k230', or 'esp32'
+let inferRunning = false;
+let k230InferActive=false, k230InferPromise=null;
+let k230InferWaveform=new Float32Array(1024);
+let esp32InferActive=false, esp32InferPromise=null;
+let esp32InferWaveform=new Float32Array(1024);
+
+const ENC=new TextEncoder(), DEC=new TextDecoder();
+let port=null, portReader=null, portWriter=null, connected=false;
+// Deploy-path RX buffer, held as raw byte chunks rather than decoded text:
+// the raw REPL protocol carries single-byte control codes that a UTF-8 decode
+// would corrupt. rxWaiters lets readers wake on arrival instead of polling.
+let rxQ=[], rxQLen=0, rxWaiters=[];
+// null = not yet probed, true = board offers raw-paste flow control, false = not.
+let rawPaste=null;
+
+// Dedicated serial state for K230 microphone capture. This is intentionally
+// separate from the existing K230 deployment connection.
+let k230MicPort=null, k230MicReader=null, k230MicWriter=null;
+let k230MicConnected=false, k230MicRxBuf='';
+let lastK230VoicePort=null;
+let k230AudioReady=false;
+let k230MonitorActive=false, k230MonitorPromise=null;
+let k230Waveform=new Float32Array(1024);
+let k230CommandTail=Promise.resolve();
+
+// Dedicated DFR1154/ESP32-S3 microphone WebSerial connection. The firmware
+// exposes AUDIO_CAPTURE and AUDIO_STOP; this state is separate from deployment.
+let esp32MicPort=null, esp32MicReader=null, esp32MicWriter=null;
+let esp32MicConnected=false, esp32MicRxBuf='', esp32MicLines=[];
+let lastEsp32VoicePort=null;
+let esp32MicRxPromise=null, esp32MicClosePromise=Promise.resolve();
+let esp32MicCommandTail=Promise.resolve();
+let esp32MonitorActive=false, esp32MonitorPromise=null;
+let esp32Waveform=new Float32Array(1024);
+
+// ── WebSerial utilities ──────────────────────────────────────────────────
+function usbLog(m,c=''){const el=document.getElementById('usbLog');if(!el)return;const l=document.createElement('div');if(c)l.className=c;l.textContent=m;el.appendChild(l);el.scrollTop=el.scrollHeight;}
+function usbLogClear(){const el=document.getElementById('usbLog');if(el)el.innerHTML='';}
+function usbSetPct(i,p){const pv=Math.round(p*100);const pEl=document.getElementById('usbFile'+i+'Pct');const fEl=document.getElementById('usb'+i+'Fill');if(pEl)pEl.textContent=pv+'%';if(fEl)fEl.style.width=pv+'%';}
+function showUsbPanel(v){document.getElementById('usbProgressPanel')?.classList.toggle('visible',v);}
+function resetUsbPanel(){usbSetPct(1,0);usbSetPct(2,0);usbLogClear();showUsbPanel(false);}
+async function cleanupPort(){connected=false;try{portReader&&await portReader.cancel();}catch{}try{portReader&&portReader.releaseLock();}catch{}try{portWriter&&await portWriter.close();}catch{}try{portWriter&&portWriter.releaseLock();}catch{}try{port&&await port.close();}catch{}port=portReader=portWriter=null;rxReset();rawPaste=null;}
+function rxReset(){rxQ=[];rxQLen=0;}
+function rxPush(u8){rxQ.push(u8);rxQLen+=u8.length;const w=rxWaiters;rxWaiters=[];for(const f of w)f();}
+// Resolves as soon as bytes arrive, or after ms. Replaces fixed-interval
+// polling, which imposed its own latency floor on every round trip.
+function rxWait(ms){return new Promise(r=>{let done=false;const f=()=>{if(done)return;done=true;r();};rxWaiters.push(f);setTimeout(f,Math.max(1,ms));});}
+async function rxTake(n,ms){const dl=Date.now()+ms;while(rxQLen<n){if(Date.now()>=dl)throw new Error('Serial timeout (wanted '+n+' byte(s), have '+rxQLen+')');await rxWait(Math.min(50,dl-Date.now()));}
+    const out=new Uint8Array(n);let got=0;
+    while(got<n){const head=rxQ[0],take=Math.min(head.length,n-got);out.set(head.subarray(0,take),got);got+=take;if(take===head.length)rxQ.shift();else rxQ[0]=head.subarray(take);}
+    rxQLen-=n;return out;}
+async function rxTakeUntil(term,ms){const dl=Date.now()+ms;const acc=[];for(;;){const b=await rxTake(1,Math.max(1,dl-Date.now()));if(b[0]===term)return new Uint8Array(acc);acc.push(b[0]);}}
+async function rxPump(){rxReset();try{while(connected){const{value,done}=await portReader.read();if(done)break;if(value?.length)rxPush(value);}}catch(e){if(connected)usbLog('RX: '+e.message,'err');}}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function write(d){if(!portWriter)return;await portWriter.write(typeof d==='string'?ENC.encode(d):d);}
+function bytesToStr(u8){let s='';for(let i=0;i<u8.length;i+=8192)s+=String.fromCharCode.apply(null,u8.subarray(i,i+8192));return s;}
+function u8ToB64(u8){return btoa(bytesToStr(u8));}
+const HEXB=Array.from({length:256},(_,i)=>i.toString(16).padStart(2,'0'));
+function u8ToHex(u8){let s='';for(let i=0;i<u8.length;i++)s+=HEXB[u8[i]];return s;}
+// Drains whatever is buffered, returning it for diagnostics.
+async function rxDrain(ms=250){
+    await rxWait(ms);
+    return rxQLen?bytesToStr(await rxTake(rxQLen,300)):'';
+}
+// Ctrl-C out of any running script, Ctrl-A into raw REPL, discard the banner.
+// Leaves the board at the point where a command can be written.
+async function resyncRepl(){
+    await write('\x03');await sleep(250);await write('\x03');await sleep(250);
+    rxReset();
+    await write('\x01');await sleep(400);
+    const saw=await rxDrain();rxReset();
+    return saw;
+}
+// Leaves the board in raw REPL with the '>' prompt consumed; execPy re-consumes
+// the prompt it emits after each command, so that state holds between calls.
+async function enterRawREPL(){
+    usbLog('Entering REPL...','info');
+    let saw='';
+    for(let attempt=1;attempt<=3;attempt++){
+        saw=await resyncRepl();
+        // The banner text is not a reliable signal: CanMV builds word it
+        // differently and a running script interleaves its own output with it.
+        // Probe with a real command and let the response decide. Probe over
+        // classic exec, which needs no capability negotiation.
+        rawPaste=false;
+        try{await execPy('pass',6000);}
+        catch(e){usbLog('Attempt '+attempt+': '+e.message,'warn');continue;}
+        usbLog('REPL ready','ok');
+        // Now that the REPL is known good, find out whether this firmware offers
+        // flow control. Without it, large writes corrupt on this board.
+        rawPaste=null;
+        try{await execPy('pass',6000);}
+        catch(e){
+            usbLog('raw-paste probe failed ('+e.message+'); classic REPL','warn');
+            rawPaste=false;await resyncRepl();
+            try{await execPy('pass',6000);}catch{}
+        }
+        return;
+    }
+    const hint=saw.replace(/[\r\n]+/g,' ').trim().slice(0,120);
+    throw new Error('K230 raw REPL did not respond'+(hint?' (board sent: "'+hint+'")':' (board sent nothing)')+'. Reset the board, close any other serial monitor holding the port, then deploy again.');
+}
+async function exitRawREPL(){await write('\x02');await sleep(200);}
+// Raw REPL acknowledges a command with OK. Skip anything preceding it rather
+// than desyncing, since a board fresh out of a running script can still have
+// script output or a stray prompt in flight.
+async function rxSkipToOK(ms){
+    const dl=Date.now()+ms;const skipped=[];
+    for(;;){
+        const b=await rxTake(1,Math.max(1,dl-Date.now()));
+        if(b[0]===0x4f){
+            const n=await rxTake(1,Math.max(1,dl-Date.now()));
+            if(n[0]===0x4b)break;
+            skipped.push(b[0],n[0]);
+        }else skipped.push(b[0]);
+        if(skipped.length>4096)throw new Error('no OK from board (not in raw REPL?)');
+    }
+    const junk=bytesToStr(new Uint8Array(skipped)).replace(/[\r\n]+/g,' ').trim();
+    if(junk)usbLog('skipped: '+junk.slice(0,80),'warn');
+}
+// MicroPython raw-paste mode. The board advertises a window size and emits 0x01
+// as it drains each window, so the host physically cannot outrun its input
+// buffer — the guarantee classic raw REPL does not give. Returns false if this
+// firmware does not offer it, leaving the board ready for a classic write.
+async function pasteWrite(code,ms){
+    await write('\x05A\x01');
+    const h=await rxTake(2,4000);
+    if(h[0]!==0x52){try{await rxTakeUntil(0x3e,2000);}catch{}return false;}
+    if(h[1]!==0x01)return false;              // 'R\x00' = understood, not supported
+    const wb=await rxTake(2,4000),win=wb[0]|(wb[1]<<8);
+    if(win<32)return false;
+    const buf=ENC.encode(code);let remain=win,i=0;
+    while(i<buf.length){
+        while(remain===0||rxQLen){
+            const c=await rxTake(1,ms);
+            if(c[0]===0x01)remain+=win;
+            else if(c[0]===0x04){await write('\x04');throw new Error('board aborted the paste');}
+            else throw new Error('unexpected 0x'+c[0].toString(16)+' during raw paste');
+        }
+        const n=Math.min(remain,buf.length-i);
+        await write(buf.subarray(i,i+n));
+        remain-=n;i+=n;
+    }
+    await write('\x04');
+    await rxTakeUntil(0x04,ms);               // board acknowledges end of data
+    return true;
+}
+async function execPy(code,ms=25000){
+    let pasted=false;
+    if(rawPaste!==false){
+        pasted=await pasteWrite(code,ms);
+        if(rawPaste===null){rawPaste=pasted;usbLog(pasted?'raw-paste mode: flow controlled, window OK':'classic raw REPL: no flow control','info');}
+    }
+    if(!pasted){await write(code);await write('\x04');await rxSkipToOK(ms);}
+    const out=await rxTakeUntil(0x04,ms),err=await rxTakeUntil(0x04,ms);
+    await rxTakeUntil(0x3e,ms);
+    const es=bytesToStr(err).trim();
+    if(es){usbLog('stderr: '+es,'warn');throw new Error(es.split('\n').pop().trim()||'Board raised an exception');}
+    return bytesToStr(out).trim();
+}
+async function ensureDir(p){await execPy(`import os\r\ntry:\r\n os.mkdir('${p.replace(/\/$/,"")}')\r\nexcept:pass`);}
+async function boardFileSize(dest){
+    const n=parseInt(await execPy(`import os\r\ntry:\r\n print(os.stat('${dest}')[6])\r\nexcept:\r\n print(-1)`),10);
+    return Number.isFinite(n)?n:-1;
+}
+// base64 costs 1.33x on the wire against 2.0x for hex, and a2b_base64 decodes on
+// the board far faster than bytes.fromhex parses. bytes.fromhex is the fallback
+// because it is a builtin, so it works even if neither binascii module is present.
+async function pickEncoder(){
+    try{
+        await execPy('try:\r\n import ubinascii as _ub\r\nexcept:\r\n import binascii as _ub');
+        return u8=>`_f.write(_ub.a2b_base64('${u8ToB64(u8)}'))`;
+    }catch{
+        usbLog('No binascii on board; falling back to hex','warn');
+        return u8=>`_f.write(bytes.fromhex('${u8ToHex(u8)}'))`;
+    }
+}
+async function closeBoardFile(){try{await execPy('try:\r\n _f.close()\r\nexcept:\r\n pass');}catch{}}
+async function writeFileOnBoard(dest,arr,onPct){
+    let enc=await pickEncoder();
+    const t0=Date.now();
+    let chunk=rawPaste?CHUNK_BYTES:CHUNK_BYTES_CLASSIC,off=0,lastUi=0,mode='wb',tries=0;
+    for(;;){
+        try{
+            await execPy(`_f=open('${dest}','${mode}')`);
+            while(off<arr.length){
+                await execPy(enc(arr.subarray(off,off+chunk)));
+                off=Math.min(off+chunk,arr.length);
+                const now=Date.now();
+                if(onPct&&(now-lastUi>120||off>=arr.length)){lastUi=now;onPct(off/arr.length);}
+            }
+            await execPy('_f.close();del _f');
+            break;
+        }catch(e){
+            // A silent board is wedged, not merely overloaded. Shrinking the chunk
+            // and writing again only pushes it further under, so stop and say so.
+            if(/Serial timeout|no OK from board/i.test(e.message))
+                throw new Error(e.message+' — board stopped responding. Unplug/replug or reset the K230, then deploy again.');
+            if(++tries>4||chunk<=192)throw e;
+            chunk=Math.max(192,Math.floor(chunk/6)*3);
+            usbLog('Chunk failed ('+e.message+'); retrying at '+chunk+' B','warn');
+            await enterRawREPL();
+            // The previous _f is still open on the board. Reopening without
+            // closing it leaves a dangling handle on the SD card, which is what
+            // turned the retry into "OSError: [Errno 1] EPERM".
+            await closeBoardFile();
+            enc=await pickEncoder();
+            const have=await boardFileSize(dest);
+            off=have<0?0:Math.min(have,arr.length);
+            mode=off>0?'ab':'wb';
+        }
+    }
+    // A short write otherwise stays invisible until kpu.load_kmodel fails on the
+    // board, which is a confusing place to debug from.
+    const sz=await boardFileSize(dest);
+    if(sz!==arr.length)throw new Error(`${dest} is ${sz} bytes on the board, expected ${arr.length}`);
+    const secs=Math.max(0.001,(Date.now()-t0)/1000);
+    usbLog(`${(arr.length/1024).toFixed(0)} KB in ${secs.toFixed(1)}s (${(arr.length/1024/secs).toFixed(1)} KB/s)`,'info');
+}
+function onDeployMethodChange(val){document.getElementById('wifiRow').style.display=val==='wifi'?'flex':'none';document.getElementById('usbBaudRow').style.display=val==='usb'?'flex':'none';if(val!=='usb')showUsbPanel(false);}
+function downloadBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+function setStatus(msg){document.getElementById('statusBar').textContent=msg;}
+function updateThresh(v){THRESH=parseInt(v)/100;const el=document.getElementById('thresholdValue');if(el)el.textContent=v+'%';}
+function updateInferInterval(v){INFER_MS=parseInt(v);const e1=document.getElementById('threshDisplay2');if(e1)e1.textContent=v+'ms';const e2=document.getElementById('inferDisplay');if(e2)e2.textContent=v+'ms';if(micActive)restartInferTimer();}
+function isNoise(name){const n=name.toLowerCase();return n.includes('noise')||n.includes('background')||n.includes('silence');}
+function updateButtons(){const ok=trained;['deployHeaderBtn','deployCardBtn','deployK230Btn','exportBtn','exportEsp32Btn','deployEsp32Btn','deployEsp32FullBtn','micBtn','k230InferBtn','esp32InferBtn'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!ok;});}
+
+// ── Clip length ───────────────────────────────────────────────────────────
+function setClipLen(ms){
+    CLIP_MS=ms;
+    document.querySelectorAll('.cl-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.ms)===ms));
+    const nW=computeNWindows(ms);
+    const h=document.getElementById('clipLenHint');
+    if(h)h.innerHTML=`Each clip is recorded for <b>${ms/1000}s</b>, sliced into <b>${nW}</b> overlapping 1-sec windows, each embedded -> averaged -> 1 clip vector.`;
+    const a=document.getElementById('nWindows');    if(a)a.textContent=nW;
+    const b=document.getElementById('pbClipLen');   if(b)b.textContent=ms/1000;
+    const c2=document.getElementById('pbWindows');  if(c2)c2.textContent=nW;
+}
+function computeNWindows(ms){const samples=Math.ceil(SR*(ms/1000));let n=0,start=0;while(start+WINDOW_SAMPLES<=samples){n++;start+=HOP_SAMPLES;}return Math.max(1,n);}
+
+// ── Build embedding extractor from backbone layer references ─────────────
+function buildEmbedExtractor(){
+    const layers=backbone.layers;
+    let embedLayer=null, embedDim=0;
+    for(let i=layers.length-2;i>=0;i--){
+        const layer=layers[i];
+        const shape=layer.outputShape;
+        const flat=Array.isArray(shape[0])?shape[0]:shape;
+        if(flat.length===2&&typeof flat[1]==='number'&&flat[1]>=32){embedLayer=layer;embedDim=flat[1];break;}
+    }
+    if(!embedLayer){embedLayer=layers[layers.length-2];const shape=embedLayer.outputShape;const flat=Array.isArray(shape[0])?shape[0]:shape;embedDim=flat[flat.length-1]||128;}
+    console.log('[EmbedExtractor] using layer "'+embedLayer.name+'" dim '+embedDim);
+    embedExtractor=tf.model({inputs:backbone.inputs,outputs:embedLayer.output});
+    EMBED_DIM=embedDim;
+    try{const inShape=backbone.inputs[0].shape;if(Array.isArray(inShape)&&inShape.length===4){if(inShape[1])MODEL_FRAMES=inShape[1];if(inShape[2])MODEL_BINS=inShape[2];}console.log('[BackboneShape]',JSON.stringify(inShape));}catch(e){console.warn('[BackboneShape]',e);}
+    const nameEl=document.getElementById('embedLayerName');const dimEl=document.getElementById('embedLayerDim');
+    const infoBox=document.getElementById('embedInfoBox');const pbDim=document.getElementById('pbEmbedDim');
+    if(nameEl)nameEl.textContent=embedLayer.name;if(dimEl)dimEl.textContent=embedDim;
+    if(infoBox)infoBox.style.display='block';if(pbDim)pbDim.textContent=embedDim;
+    return embedDim;
+}
+
+// ── Load backbone ────────────────────────────────────────────────────────
+async function loadBackbone(){
+    const fill=document.getElementById('modelLoadFill');
+    const icon=document.getElementById('modelLoadIcon');
+    const title=document.getElementById('modelLoadTitle');
+    const sub=document.getElementById('modelLoadStatus');
+    try{
+        let p=0;
+        const ticker=setInterval(()=>{p=Math.min(90,p+Math.random()*10);if(fill)fill.style.width=p+'%';},300);
+        recognizer=speechCommands.create('BROWSER_FFT');
+        await recognizer.ensureModelLoaded();
+        backbone=recognizer.model;
+        clearInterval(ticker);
+        buildEmbedExtractor();
+        if(fill){fill.style.width='100%';fill.style.background='#10b981';}
+        if(icon)icon.textContent='✅';
+        if(title)title.textContent='Backbone ready — Speech Commands v2 (embed dim: '+EMBED_DIM+')';
+        if(sub)sub.textContent=EMBED_DIM+'-dim embeddings. Manual pipeline active.';
+        document.getElementById('modelLoadBar').style.borderLeftColor='#10b981';
+        ['addClassBtn','addNoiseBtn','trainBtn'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
+        setStatus('Backbone loaded (embed dim: '+EMBED_DIM+') — add clips for each class, then train.');
+        render();
+    }catch(e){
+        if(fill){fill.style.width='100%';fill.style.background='#ef4444';}
+        if(icon)icon.textContent='❌';
+        if(title)title.textContent='Failed to load backbone';
+        if(sub)sub.textContent=e.message;
+        setStatus('Backbone load failed: '+e.message);
+        console.error(e);
+    }
+}
+
+// ── Pure-JS radix-2 Cooley-Tukey FFT ────────────────────────────────────
+function realFFTMagnitudes(signal){
+    const n=signal.length;
+    const re=new Float32Array(signal);
+    const im=new Float32Array(n);
+    const bits=Math.log2(n)|0;
+    for(let i=1,j=0;i<n;i++){let bit=n>>1,x=i;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j){let t=re[i];re[i]=re[j];re[j]=t;}}
+    for(let len=2;len<=n;len<<=1){const ang=-2*Math.PI/len,wR=Math.cos(ang),wI=Math.sin(ang),half=len>>1;for(let i=0;i<n;i+=len){let cR=1,cI=0;for(let j=0;j<half;j++){const uR=re[i+j],uI=im[i+j],vR=re[i+j+half]*cR-im[i+j+half]*cI,vI=re[i+j+half]*cI+im[i+j+half]*cR;re[i+j]=uR+vR;im[i+j]=uI+vI;re[i+j+half]=uR-vR;im[i+j+half]=uI-vI;const nr=cR*wR-cI*wI;cI=cR*wI+cI*wR;cR=nr;}}}
+    const mag=new Float32Array(n>>1);
+    for(let i=0;i<(n>>1);i++)mag[i]=Math.sqrt(re[i]*re[i]+im[i]*im[i]);
+    return mag;
+}
+
+// ── Spectrogram preprocessing ────────────────────────────────────────────
+function computeSpectrogram(pcm16k){
+    const n=pcm16k.length,win=FFT_WIN;
+    const hop=MODEL_FRAMES>1?Math.max(1,Math.floor((n-win)/(MODEL_FRAMES-1))):n;
+    const hann=new Float32Array(win);
+    for(let i=0;i<win;i++)hann[i]=0.5*(1-Math.cos(2*Math.PI*i/(win-1)));
+    const specData=new Float32Array(MODEL_FRAMES*MODEL_BINS);
+    for(let f=0;f<MODEL_FRAMES;f++){
+        const s=f*hop;
+        const frame=new Float32Array(win);
+        for(let i=0;i<win;i++)frame[i]=((s+i)<n?pcm16k[s+i]:0)*hann[i];
+        const mag=realFFTMagnitudes(frame);
+        for(let b=0;b<MODEL_BINS;b++)specData[f*MODEL_BINS+b]=Math.log(Math.max(mag[b],1e-6));
+    }
+    return tf.tensor4d(specData,[1,MODEL_FRAMES,MODEL_BINS,1]);
+}
+function computeNormalizedSpectrogram(pcm16k){
+    const spec = computeSpectrogram(pcm16k);
+    const data = spec.dataSync();
+    spec.dispose();
+    const len = data.length;
+    let sum = 0, sumsq = 0;
+    for (let i = 0; i < len; i++) {
+        sum += data[i];
+        sumsq += data[i] * data[i];
+    }
+    const mean = sum / len;
+    const variance = Math.max(0, (sumsq / len) - mean * mean);
+    const stdDev = Math.sqrt(variance) + 1e-4;
+    const normalized = new Float32Array(len);
+    for (let i = 0; i < len; i++) {
+        normalized[i] = (data[i] - mean) / stdDev;
+    }
+    return tf.tensor4d(normalized, [1, MODEL_FRAMES, MODEL_BINS, 1]);
+}
+// Per-spectrogram mean/std normalization cancels the constant log-offset a
+// microphone gain difference produces, so clips recorded on the laptop mic
+// transfer to the K230/ESP32-S3 mics. The K230 script and ESP32 firmware
+// (tm_speech_commands_norm_log mode) apply the identical normalization.
+function prepareWindowInput(pcm16k){return computeNormalizedSpectrogram(pcm16k);}
+
+// ── Embed one window ─────────────────────────────────────────────────────
+async function embedWindow(pcm16k){
+    if(!embedExtractor)throw new Error('Embedding extractor not built yet');
+    const input=prepareWindowInput(pcm16k);
+    const embedding=embedExtractor.predict(input);
+    input.dispose();
+    const flat=embedding.reshape([-1]);
+    embedding.dispose();
+    const arr=await flat.data();
+    flat.dispose();
+    return new Float32Array(arr);
+}
+
+// ── Embed full clip (slice into windows, embed each, average, L2-normalise) ──
+async function embedClip(pcmFull){
+    const totalSamples=pcmFull.length;
+    const windows=[];
+    let start=0;
+    while(start+WINDOW_SAMPLES<=totalSamples){windows.push(pcmFull.slice(start,start+WINDOW_SAMPLES));start+=HOP_SAMPLES;}
+    if(windows.length===0){const padded=new Float32Array(WINDOW_SAMPLES);padded.set(pcmFull.slice(0,WINDOW_SAMPLES));windows.push(padded);}
+    const embeds=[];
+    for(const win of windows){const e=await embedWindow(win);embeds.push(e);}
+    const dim=embeds[0].length;
+    const avg=new Float32Array(dim);
+    for(const e of embeds)for(let i=0;i<dim;i++)avg[i]+=e[i];
+    for(let i=0;i<dim;i++)avg[i]/=embeds.length;
+    let norm=0;for(let i=0;i<dim;i++)norm+=avg[i]*avg[i];
+    norm=Math.sqrt(norm)+1e-8;
+    for(let i=0;i<dim;i++)avg[i]/=norm;
+    return avg;
+}
+
+// ── Decode + resample ────────────────────────────────────────────────────
+async function decodeAndResample(blob){
+    const ab=await blob.arrayBuffer();
+    const decCtx=new AudioContext();
+    const decoded=await decCtx.decodeAudioData(ab);
+    await decCtx.close();
+    const targetLen=Math.ceil(decoded.duration*SR);
+    const offCtx=new OfflineAudioContext(1,targetLen,SR);
+    const src=offCtx.createBufferSource();
+    src.buffer=decoded;src.connect(offCtx.destination);src.start(0);
+    const rendered=await offCtx.startRendering();
+    return rendered.getChannelData(0).slice();
+}
+
+// ── PCM -> WAV ────────────────────────────────────────────────────────────
+function pcmToWav(pcm,sr=16000){
+    const n=pcm.length,ds=n*2,buf=new ArrayBuffer(44+ds),v=new DataView(buf);
+    const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+    ws(0,'RIFF');v.setUint32(4,36+ds,true);ws(8,'WAVE');ws(12,'fmt ');
+    v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+    v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);
+    v.setUint16(32,2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,ds,true);
+    let o=44;for(let i=0;i<n;i++){const s=Math.max(-1,Math.min(1,pcm[i]));v.setInt16(o,s<0?s*0x8000:s*0x7FFF,true);o+=2;}
+    return new Blob([buf],{type:'audio/wav'});
+}
+
+// ── K230 microphone capture over USB raw REPL ───────────────────────────
+async function k230MicRxPump(){
+    k230MicRxBuf='';
+    try{
+        while(k230MicConnected){
+            const {value,done}=await k230MicReader.read();
+            if(done)break;
+            if(value?.length)k230MicRxBuf+=DEC.decode(value,{stream:true});
+        }
+    }catch(e){
+        if(k230MicConnected)setStatus('K230 serial receive error: '+e.message);
+    }
+}
+
+async function k230MicWrite(data){
+    if(!k230MicWriter)throw new Error('K230 serial port is not connected');
+    await k230MicWriter.write(typeof data==='string'?ENC.encode(data):data);
+}
+
+async function cleanupK230MicPort(){
+    await stopK230Monitor();
+    await cleanupK230AudioSession(true);
+    await closeK230MicTransport();
+}
+
+async function closeK230MicTransport(){
+    if(k230MicPort)lastK230VoicePort=k230MicPort;
+    k230MicConnected=false;
+    try{k230MicWriter&&await k230MicWriter.write(ENC.encode('\x02'));}catch{}
+    try{k230MicReader&&await k230MicReader.cancel();}catch{}
+    try{k230MicReader&&k230MicReader.releaseLock();}catch{}
+    try{k230MicWriter&&await k230MicWriter.close();}catch{}
+    try{k230MicWriter&&k230MicWriter.releaseLock();}catch{}
+    try{k230MicPort&&await k230MicPort.close();}catch{}
+    k230MicPort=k230MicReader=k230MicWriter=null;
+    k230MicRxBuf='';
+    k230CommandTail=Promise.resolve();
+}
+
+async function ensureK230MicConnected(){
+    if(k230MicConnected&&k230MicPort?.readable&&k230MicPort?.writable)return;
+    if(!SERIAL_SUPPORTED)throw new Error('K230 Mic requires Chrome/Edge with WebSerial');
+    if(k230MicPort)await cleanupK230MicPort();
+    // Full-rate PCM over raw REPL is not reliable at 115200 baud.
+    const baud=921600;
+    const baudSelect=document.getElementById('usbBaudSelect');
+    if(baudSelect)baudSelect.value=String(baud);
+    k230MicPort=await navigator.serial.requestPort();
+    await k230MicPort.open({baudRate:baud,bufferSize:32768});
+    lastK230VoicePort=k230MicPort;
+    k230MicReader=k230MicPort.readable.getReader();
+    k230MicWriter=k230MicPort.writable.getWriter();
+    k230MicConnected=true;
+    k230MicRxPump();
+}
+
+async function k230MicEnterRawREPL(){
+    await k230CommandTail.catch(()=>{});
+    // Give a running classifier time to execute its finally block and release
+    // PyAudio/MediaManager before opening a new microphone stream.
+    await k230MicWrite('\x03');await sleep(1000);
+    for(let attempt=0;attempt<2;attempt++){
+        k230MicRxBuf='';
+        await k230MicWrite('\x01');await sleep(300);
+        let full='',deadline=Date.now()+2500;
+        while(Date.now()<deadline){
+            if(k230MicRxBuf){full+=k230MicRxBuf;k230MicRxBuf='';}
+            if(full.includes('raw REPL')){k230MicRxBuf='';return;}
+            await sleep(40);
+        }
+        await k230MicWrite('\x03');await sleep(400);
+    }
+    throw new Error('K230 raw REPL was not detected. Stop CanMV IDE/serial monitor and reset the board');
+}
+
+async function k230MicExecPyUnlocked(code,timeoutMs=15000){
+    k230MicRxBuf='';
+    await k230MicWrite(code);
+    await k230MicWrite('\x04');
+    let full='';
+    const deadline=Date.now()+timeoutMs;
+    while(Date.now()<deadline){
+        if(k230MicRxBuf){
+            full+=k230MicRxBuf;k230MicRxBuf='';
+            const okAt=full.indexOf('OK');
+            if(okAt>=0){
+                const afterOk=full.slice(okAt+2);
+                const outEnd=afterOk.indexOf('\x04');
+                if(outEnd>=0){
+                    const errEnd=afterOk.indexOf('\x04',outEnd+1);
+                    if(errEnd>=0){
+                        const output=afterOk.slice(0,outEnd).trim();
+                        const stderr=afterOk.slice(outEnd+1,errEnd).trim();
+                        if(stderr)throw new Error(stderr);
+                        return output;
+                    }
+                }
+            }
+            if(full.includes('\r\n>')||full==='>'){
+                await k230MicWrite('\x03');await sleep(100);k230MicRxBuf='';
+                throw new Error('K230 REPL is waiting for more Python input');
+            }
+        }
+        await sleep(10);
+    }
+    throw new Error('K230 serial command timed out');
+}
+
+// Serialize every raw-REPL command. Preview, recording, cleanup, and recovery
+// can never read or clear the shared receive buffer at the same time.
+function k230MicExecPy(code,timeoutMs=15000){
+    const run=k230CommandTail.then(()=>k230MicExecPyUnlocked(code,timeoutMs));
+    k230CommandTail=run.catch(()=>{});
+    return run;
+}
+
+function k230AudioCleanupCode(){
+    return [
+        "try:",
+        " _km_s.stop_stream()",
+        "except: pass",
+        "try:",
+        " _km_s.close()",
+        "except: pass",
+        "try:",
+        " _km_p.terminate()",
+        "except: pass",
+        "try:",
+        " MediaManager.deinit()",
+        "except: pass"
+    ].join('\r\n');
+}
+
+async function stopK230Monitor(){
+    k230MonitorActive=false;
+    if(k230MonitorPromise){
+        await k230MonitorPromise.catch(()=>{});
+        k230MonitorPromise=null;
+    }
+}
+
+async function cleanupK230AudioSession(force=false){
+    await stopK230Monitor();
+    if((k230AudioReady||force)&&k230MicConnected){
+        await k230MicExecPy(k230AudioCleanupCode()).catch(()=>{});
+        // K230 audio VB resources are released asynchronously.
+        await sleep(400);
+    }
+    k230AudioReady=false;
+}
+
+async function recoverK230AfterTimeout(){
+    await stopK230Monitor();
+    k230AudioReady=false;
+    // Interrupt a blocked stream.read(), flush the old raw-REPL response, and
+    // return to a known prompt before rebuilding the audio session.
+    await k230MicEnterRawREPL();
+    await k230MicExecPy(k230AudioCleanupCode(),6000).catch(()=>{});
+    await sleep(500);
+}
+
+async function setupK230AudioSession(){
+    if(k230AudioReady)return;
+    const frameSamples=1024;
+    const setupCode=[
+        'from media.pyaudio import PyAudio, paInt16',
+        'from media.media import MediaManager',
+        '_km_p=PyAudio()',
+        '_km_p.initialize('+frameSamples+')',
+        'MediaManager.init()',
+        "_km_s=_km_p.open(format=paInt16,channels=1,rate=16000,input=True,frames_per_buffer="+frameSamples+")",
+        '_km_s.volume(0,72)',
+        '_km_s.volume(1,72)'
+    ].join('\r\n');
+    await k230MicExecPy(setupCode);
+    k230AudioReady=true;
+}
+
+function pcm16BytesToFloat32(raw){
+    const pcm=new Float32Array(Math.floor(raw.length/2));
+    for(let i=0;i<pcm.length;i++){
+        let value=raw[i*2]|(raw[i*2+1]<<8);
+        if(value&0x8000)value-=0x10000;
+        pcm[i]=value/32768.0;
+    }
+    return pcm;
+}
+
+function k230HexToBytes(hexText){
+    const hex=hexText.replace(/\s/g,'');
+    if(!hex.length||hex.length%2||!/^[0-9a-fA-F]+$/.test(hex)){
+        throw new Error('Invalid PCM data received from K230');
+    }
+    const raw=new Uint8Array(hex.length/2);
+    for(let i=0;i<raw.length;i++)raw[i]=parseInt(hex.slice(i*2,i*2+2),16);
+    return raw;
+}
+
+function k230HexToPcm(hexText){
+    return pcm16BytesToFloat32(k230HexToBytes(hexText));
+}
+
+function startK230Monitor(classIdx){
+    if(k230MonitorActive||!k230AudioReady)return;
+    k230MonitorActive=true;
+    k230MonitorPromise=(async()=>{
+        while(k230MonitorActive&&activeMicSource==='k230'&&activeMicIdx===classIdx&&!isRecording){
+            try{
+                // Read the full audio block so the device stays current, but
+                // transfer only 256 samples for the visual waveform (75% less data).
+                const output=await k230MicExecPy('_km_v=_km_s.read()\r\nprint(_km_v[:512].hex())',4000);
+                k230Waveform=k230HexToPcm(output);
+            }catch(e){
+                if(k230MonitorActive){
+                    console.error('K230 waveform error:',e);
+                    setStatus('K230 waveform stopped: '+e.message);
+                }
+                k230MonitorActive=false;
+            }
+            await sleep(20);
+        }
+    })();
+}
+
+async function openK230Mic(classIdx){
+    if(!backbone||!embedExtractor){setStatus('Backbone not loaded yet.');return;}
+    if(isRecording)return;
+    if(micActive)await stopInference();
+    if(activeMicSource==='k230'&&activeMicIdx===classIdx)return;
+    if(activeMicIdx!==null)await stopMic();
+    const btn=document.getElementById('k230-mic-btn-'+classIdx);
+    const original=btn?.textContent||'K230 Mic';
+    if(btn){btn.disabled=true;btn.textContent='Connecting...';}
+    try{
+        setStatus('Select the K230 USB serial port...');
+        await ensureK230MicConnected();
+        if(btn)btn.textContent='Opening...';
+        setStatus('Opening the K230 microphone...');
+        await k230MicEnterRawREPL();
+        await setupK230AudioSession();
+        activeMicSource='k230';
+        activeMicIdx=classIdx;
+        k230Waveform=new Float32Array(1024);
+        render();animateMicVis(classIdx);startK230Monitor(classIdx);
+        setStatus('K230 mic live — hold the button to record a clip.');
+    }catch(e){
+        console.error('K230 microphone error:',e);
+        await cleanupK230AudioSession(true);
+        activeMicSource=null;activeMicIdx=null;
+        render();
+        setStatus('K230 microphone error: '+e.message);
+        alert('K230 Mic Failed:\n\n'+e.message+'\n\nClose CanMV IDE/serial monitor, reset the board, and try again.');
+        if(!k230MicPort?.readable||!k230MicPort?.writable)await cleanupK230MicPort();
+    }finally{
+        const currentBtn=document.getElementById('k230-mic-btn-'+classIdx);
+        if(currentBtn){currentBtn.disabled=false;currentBtn.textContent=original;}
+    }
+}
+
+async function recordK230Clip(classIdx){
+    if(!backbone||!embedExtractor||activeMicSource!=='k230'||activeMicIdx!==classIdx||isRecording)return;
+    const cls=classes[classIdx];
+    if(!cls)return;
+    isRecording=true;recStartTime=Date.now();
+    const progFill=document.getElementById('rec-prog-'+classIdx);
+    if(progFill)progFill.style.width='0%';
+
+    try{
+        await stopK230Monitor();
+        const clipSamples=Math.ceil(SR*(CLIP_MS/1000));
+        const targetBytes=clipSamples*2;
+        const frameSamples=1024;
+        const readCount=Math.ceil(clipSamples/frameSamples);
+        const raw=new Uint8Array(targetBytes);
+        let writeOffset=0;
+        setStatus('Recording '+(CLIP_MS/1000).toFixed(1)+'s from K230 microphone — speak now!');
+        for(let chunkIndex=0;chunkIndex<readCount;chunkIndex++){
+            const output=await k230MicExecPy('print(_km_s.read().hex())',5000);
+            const block=k230HexToBytes(output);
+            if(block.length<frameSamples*2){
+                throw new Error('K230 returned a short audio block ('+block.length+' bytes)');
+            }
+            const take=Math.min(block.length,targetBytes-writeOffset);
+            raw.set(block.subarray(0,take),writeOffset);
+            writeOffset+=take;
+            const pct=Math.round(writeOffset/targetBytes*100);
+            if(progFill)progFill.style.width=pct+'%';
+            setStatus('Recording K230 audio: '+pct+'% — keep speaking');
+        }
+        if(writeOffset!==targetBytes)throw new Error('Incomplete K230 clip: '+writeOffset+' of '+targetBytes+' bytes');
+        await cleanupK230AudioSession(true);
+
+        const pcm=pcm16BytesToFloat32(raw);
+        setStatus('Processing K230 microphone clip...');
+        const emb=await embedClip(pcm);
+        if(!classAudio[cls.name])classAudio[cls.name]=[];
+        if(!embeddings[cls.name])embeddings[cls.name]=[];
+        classAudio[cls.name].push(pcm);
+        embeddings[cls.name].push(emb);
+        const count=embeddings[cls.name].length;
+        const countEl=document.getElementById('cc-count-'+classIdx);
+        if(countEl)countEl.textContent=count+' clips';
+        const visCount=document.getElementById('vis-count-'+classIdx);
+        if(visCount)visCount.textContent=count+' clips';
+        addThumb(classIdx,pcm,emb,count-1);
+        renderStats();trained=false;updateButtons();
+        setStatus('K230 mic clip '+count+' for "'+cls.name+'" — '+(pcm.length/SR).toFixed(2)+'s at 16 kHz');
+    }catch(e){
+        console.error('K230 recording error:',e);
+        const isTimeout=String(e?.message||e).toLowerCase().includes('timed out');
+        let recovered=false;
+        if(isTimeout&&k230MicConnected){
+            setStatus('K230 timed out — recovering USB/REPL connection...');
+            try{
+                await recoverK230AfterTimeout();
+                recovered=true;
+                setStatus('K230 connection recovered — hold Record and speak again.');
+            }catch(recoveryError){
+                console.error('K230 recovery failed:',recoveryError);
+                await closeK230MicTransport();
+                activeMicSource=null;activeMicIdx=null;
+                render();
+            }
+        }else{
+            await cleanupK230AudioSession(true);
+        }
+        if(recovered){
+            alert('K230 recording timed out, but the connection was recovered.\n\nPlease hold Record and speak again.');
+        }else{
+            setStatus('K230 recording error: '+e.message);
+            alert('K230 Recording Failed:\n\n'+e.message+'\n\nReconnect the K230 microphone and try again.');
+        }
+    }finally{
+        isRecording=false;clearInterval(recProgTimer);recProgTimer=null;
+        if(progFill)progFill.style.width='0%';
+        if(activeMicSource==='k230'&&activeMicIdx===classIdx&&k230MicConnected){
+            try{await setupK230AudioSession();startK230Monitor(classIdx);}
+            catch(e){setStatus('K230 waveform restart failed: '+e.message);}
+        }
+    }
+}
+
+// ── ESP32-S3 microphone capture over DFR1154 WebSerial protocol ─────────
+async function esp32MicRxPump(reader){
+    const decoder=new TextDecoder();
+    esp32MicRxBuf='';
+    try{
+        while(esp32MicConnected){
+            const {value,done}=await reader.read();
+            if(done)break;
+            if(!value?.length)continue;
+            esp32MicRxBuf+=decoder.decode(value,{stream:true}).replace(/\r/g,'');
+            let nl;
+            while((nl=esp32MicRxBuf.indexOf('\n'))>=0){
+                const line=esp32MicRxBuf.slice(0,nl).trim();
+                esp32MicRxBuf=esp32MicRxBuf.slice(nl+1);
+                if(line){
+                    esp32MicLines.push(line);
+                    if(esp32MicLines.length>512)esp32MicLines.shift();
+                }
+            }
+        }
+    }catch(e){
+        if(esp32MicConnected)setStatus('ESP32-S3 serial receive error: '+e.message);
+    }finally{
+        try{reader.releaseLock();}catch{}
+        if(esp32MicReader===reader)esp32MicReader=null;
+        esp32MicConnected=false;
+    }
+}
+
+async function esp32MicNextLine(deadline){
+    while(Date.now()<deadline){
+        if(esp32MicLines.length)return esp32MicLines.shift();
+        if(!esp32MicConnected)throw new Error('ESP32-S3 serial disconnected');
+        await sleep(10);
+    }
+    throw new Error('ESP32-S3 audio command timed out');
+}
+
+async function esp32MicWrite(text){
+    if(!esp32MicWriter)throw new Error('ESP32-S3 serial port is not connected');
+    await esp32MicWriter.write(ENC.encode(text));
+}
+
+function esp32MicRunExclusive(task){
+    const run=esp32MicCommandTail.then(task);
+    esp32MicCommandTail=run.catch(()=>{});
+    return run;
+}
+
+async function esp32MicSimpleCommandUnlocked(command,okToken,timeoutMs=8000){
+    esp32MicLines.length=0;
+    await esp32MicWrite(command+'\n');
+    const deadline=Date.now()+timeoutMs;
+    while(true){
+        const line=await esp32MicNextLine(deadline);
+        if(line.startsWith('SERIAL ERR'))throw new Error(line.replace(/^SERIAL ERR\s*/,''));
+        if(line.includes(okToken))return line;
+    }
+}
+
+function esp32MicSimpleCommand(command,okToken,timeoutMs=8000){
+    return esp32MicRunExclusive(()=>esp32MicSimpleCommandUnlocked(command,okToken,timeoutMs));
+}
+
+async function esp32MicCapturePcmUnlocked(sampleCount,timeoutMs=30000){
+    esp32MicLines.length=0;
+    await esp32MicWrite('AUDIO_CAPTURE '+sampleCount+'\n');
+    const deadline=Date.now()+timeoutMs;
+    let expectedBytes=sampleCount*2,declaredSamples=0,declaredRate=0;
+    let begun=false,totalBytes=0;
+    const chunks=[];
+    while(true){
+        const line=await esp32MicNextLine(deadline);
+        if(line.startsWith('SERIAL ERR'))throw new Error(line.replace(/^SERIAL ERR\s*/,''));
+        if(line.startsWith('SERIAL AUDIO_BEGIN ')){
+            const parts=line.split(/\s+/);
+            declaredRate=parseInt(parts[2],10);
+            declaredSamples=parseInt(parts[3],10);
+            expectedBytes=parseInt(parts[4],10);
+            if(declaredRate!==SR)throw new Error('ESP32-S3 returned '+declaredRate+' Hz; expected '+SR+' Hz');
+            if(declaredSamples!==sampleCount||expectedBytes!==sampleCount*2){
+                throw new Error('ESP32-S3 returned an unexpected audio size');
+            }
+            begun=true;
+            continue;
+        }
+        if(line.startsWith('SERIAL AUDIO_CHUNK ')){
+            if(!begun)continue;
+            const b64=line.slice('SERIAL AUDIO_CHUNK '.length).trim();
+            let binary;
+            try{binary=atob(b64);}catch{throw new Error('ESP32-S3 returned invalid base64 audio');}
+            const block=new Uint8Array(binary.length);
+            for(let i=0;i<binary.length;i++)block[i]=binary.charCodeAt(i);
+            chunks.push(block);totalBytes+=block.length;
+            if(totalBytes>expectedBytes)throw new Error('ESP32-S3 returned too much audio data');
+            continue;
+        }
+        if(line==='SERIAL AUDIO_END'){
+            if(!begun)throw new Error('ESP32-S3 audio response had no header');
+            if(totalBytes!==expectedBytes){
+                throw new Error('Incomplete ESP32-S3 audio: '+totalBytes+' of '+expectedBytes+' bytes');
+            }
+            const raw=new Uint8Array(expectedBytes);
+            let offset=0;
+            for(const block of chunks){raw.set(block,offset);offset+=block.length;}
+            return pcm16BytesToFloat32(raw);
+        }
+    }
+}
+
+function esp32MicCapturePcm(sampleCount,timeoutMs=30000){
+    return esp32MicRunExclusive(()=>esp32MicCapturePcmUnlocked(sampleCount,timeoutMs));
+}
+
+async function ensureEsp32MicConnected(){
+    if(esp32MicConnected&&esp32MicPort?.readable&&esp32MicPort?.writable)return;
+    if(!SERIAL_SUPPORTED)throw new Error('ESP32-S3 Mic requires Chrome/Edge with WebSerial');
+    await esp32MicClosePromise.catch(()=>{});
+    if(esp32MicPort)await closeEsp32MicTransport();
+    await cleanupDfr1154Port();
+    const selectedPort=await navigator.serial.requestPort();
+    await selectedPort.open({baudRate:115200,bufferSize:65536});
+    try{await selectedPort.setSignals({dataTerminalReady:false,requestToSend:false});}catch{}
+    esp32MicPort=selectedPort;
+    lastEsp32VoicePort=selectedPort;
+    esp32MicReader=selectedPort.readable.getReader();
+    esp32MicWriter=selectedPort.writable.getWriter();
+    esp32MicConnected=true;esp32MicLines=[];esp32MicRxBuf='';
+    esp32MicRxPromise=esp32MicRxPump(esp32MicReader);
+    try{
+        await esp32MicSimpleCommand('PING','SERIAL OK PONG',8000);
+    }catch(e){
+        await closeEsp32MicTransport();
+        throw e;
+    }
+}
+
+async function stopEsp32Monitor(){
+    esp32MonitorActive=false;
+    if(esp32MonitorPromise){
+        await esp32MonitorPromise.catch(()=>{});
+        esp32MonitorPromise=null;
+    }
+}
+
+async function stopEsp32InferencePump(){
+    const shouldStop=esp32InferActive||!!esp32InferPromise;
+    esp32InferActive=false;
+    if(shouldStop&&esp32MicConnected&&esp32MicWriter){
+        await esp32MicWrite('AUDIO_STREAM_STOP\n').catch(()=>{});
+    }
+    if(esp32InferPromise){
+        await esp32InferPromise.catch(()=>{});
+        esp32InferPromise=null;
+    }
+}
+
+async function cleanupEsp32AudioSession(){
+    await stopEsp32Monitor();
+    await stopEsp32InferencePump();
+    if(esp32MicConnected){
+        await esp32MicSimpleCommand('AUDIO_STOP','SERIAL OK AUDIO_STOP',8000).catch(()=>{});
+    }
+    esp32Waveform=new Float32Array(1024);
+    esp32InferWaveform=new Float32Array(1024);
+}
+
+async function closeEsp32MicTransport(){
+    const previousClose=esp32MicClosePromise;
+    const devicePort=esp32MicPort,reader=esp32MicReader,writer=esp32MicWriter;
+    if(devicePort)lastEsp32VoicePort=devicePort;
+    const rxPromise=esp32MicRxPromise;
+    esp32MicConnected=false;
+    esp32MicPort=esp32MicReader=esp32MicWriter=null;
+    esp32MicRxPromise=null;
+    esp32MicClosePromise=(async()=>{
+        try{await previousClose;}catch{}
+        try{reader&&await reader.cancel();}catch{}
+        try{rxPromise&&await rxPromise;}catch{}
+        try{writer&&await writer.close();}catch{}
+        try{writer&&writer.releaseLock();}catch{}
+        try{devicePort&&await devicePort.close();}catch{}
+    })();
+    await esp32MicClosePromise;
+    esp32MicRxBuf='';esp32MicLines=[];esp32MicCommandTail=Promise.resolve();
+}
+
+async function cleanupEsp32MicPort(){
+    await cleanupEsp32AudioSession();
+    await closeEsp32MicTransport();
+}
+
+function startEsp32Monitor(classIdx){
+    if(esp32MonitorActive||!esp32MicConnected)return;
+    esp32MonitorActive=true;
+    esp32MonitorPromise=(async()=>{
+        while(esp32MonitorActive&&activeMicSource==='esp32'&&activeMicIdx===classIdx&&!isRecording){
+            try{
+                const pcm=await esp32MicCapturePcm(1024,10000);
+                esp32Waveform=pcm;
+            }catch(e){
+                if(esp32MonitorActive){
+                    console.warn('ESP32-S3 waveform error:',e);
+                    setStatus('ESP32-S3 waveform stopped: '+e.message);
+                }
+                break;
+            }
+            await sleep(20);
+        }
+        esp32MonitorActive=false;
+    })();
+}
+
+async function openEsp32Mic(classIdx){
+    if(!backbone||!embedExtractor){setStatus('Backbone not loaded yet.');return;}
+    if(isRecording)return;
+    if(micActive)await stopInference();
+    if(activeMicSource==='esp32'&&activeMicIdx===classIdx)return;
+    if(activeMicIdx!==null)await stopMic();
+    const btn=document.getElementById('esp32-mic-btn-'+classIdx);
+    const original=btn?.textContent||'ESP32-S3 Mic';
+    if(btn){btn.disabled=true;btn.textContent='Connecting...';}
+    try{
+        setStatus('Select the ESP32-S3 USB serial port...');
+        await ensureEsp32MicConnected();
+        if(btn)btn.textContent='Opening...';
+        setStatus('Testing the ESP32-S3 microphone...');
+        esp32Waveform=await esp32MicCapturePcm(512,12000);
+        activeMicSource='esp32';activeMicIdx=classIdx;
+        render();animateMicVis(classIdx);startEsp32Monitor(classIdx);
+        setStatus('ESP32-S3 mic live — hold the button to record a clip.');
+    }catch(e){
+        console.error('ESP32-S3 microphone error:',e);
+        await cleanupEsp32MicPort();
+        activeMicSource=null;activeMicIdx=null;render();
+        setStatus('ESP32-S3 microphone error: '+e.message);
+        alert('ESP32-S3 Mic Failed:\n\n'+e.message+'\n\nFlash the updated DFR1154_IMAGE_VOICE_UNIFIED firmware, close serial monitors, reset the board, and try again before its saved model auto-starts.');
+    }finally{
+        const currentBtn=document.getElementById('esp32-mic-btn-'+classIdx);
+        if(currentBtn){currentBtn.disabled=false;currentBtn.textContent=original;}
+    }
+}
+
+async function recordEsp32Clip(classIdx){
+    if(!backbone||!embedExtractor||activeMicSource!=='esp32'||activeMicIdx!==classIdx||isRecording)return;
+    const cls=classes[classIdx];if(!cls)return;
+    isRecording=true;recStartTime=Date.now();
+    const progFill=document.getElementById('rec-prog-'+classIdx);
+    if(progFill){
+        progFill.style.width='0%';
+        recProgTimer=setInterval(()=>{
+            const pct=Math.min(100,((Date.now()-recStartTime)/CLIP_MS)*100);
+            progFill.style.width=pct+'%';
+        },30);
+    }
+    try{
+        await stopEsp32Monitor();
+        const clipSamples=Math.ceil(SR*(CLIP_MS/1000));
+        setStatus('Recording '+(CLIP_MS/1000).toFixed(1)+'s from ESP32-S3 microphone — speak now!');
+        const pcm=await esp32MicCapturePcm(clipSamples,Math.max(30000,CLIP_MS+25000));
+        clearInterval(recProgTimer);recProgTimer=null;
+        if(progFill)progFill.style.width='100%';
+        setStatus('Processing ESP32-S3 microphone clip...');
+        const emb=await embedClip(pcm);
+        if(!classAudio[cls.name])classAudio[cls.name]=[];
+        if(!embeddings[cls.name])embeddings[cls.name]=[];
+        classAudio[cls.name].push(pcm);embeddings[cls.name].push(emb);
+        const count=embeddings[cls.name].length;
+        const countEl=document.getElementById('cc-count-'+classIdx);if(countEl)countEl.textContent=count+' clips';
+        const visCount=document.getElementById('vis-count-'+classIdx);if(visCount)visCount.textContent=count+' clips';
+        addThumb(classIdx,pcm,emb,count-1);renderStats();trained=false;updateButtons();
+        setStatus('ESP32-S3 mic clip '+count+' for "'+cls.name+'" — '+(pcm.length/SR).toFixed(2)+'s at 16 kHz');
+    }catch(e){
+        console.error('ESP32-S3 recording error:',e);
+        setStatus('ESP32-S3 recording error: '+e.message);
+        alert('ESP32-S3 Recording Failed:\n\n'+e.message+'\n\nReset the board and reconnect the ESP32-S3 microphone.');
+        await closeEsp32MicTransport();
+        activeMicSource=null;activeMicIdx=null;render();
+    }finally{
+        isRecording=false;clearInterval(recProgTimer);recProgTimer=null;
+        if(progFill)progFill.style.width='0%';
+        if(activeMicSource==='esp32'&&activeMicIdx===classIdx&&esp32MicConnected){
+            startEsp32Monitor(classIdx);
+        }
+    }
+}
+
+// ── Laptop-mic input Setting mode ─────────────────────────────────────────
+function setInputMode(mode){
+    inputMode=(mode==='setting')?'setting':'auto';
+    const panel=document.getElementById('inputSettingPanel');
+    if(panel)panel.classList.toggle('visible',inputMode==='setting');
+    if(inputMode==='setting')populateMicDevices();
+    else applyManualGain(); // Auto = unity capture gain
+    saveInputSettings();
+    // If the laptop mic is already open, re-open so device/AGC constraints
+    // (which can't change on a live track) take effect immediately.
+    if(activeMicSource==='laptop'&&activeMicIdx!==null&&!isRecording){
+        const idx=activeMicIdx;stopMic().then(()=>openMic(idx));
+    }
+    setStatus(inputMode==='setting'?'Manual input settings enabled (laptop mic).':'Auto input mode.');
+}
+
+async function populateMicDevices(){
+    const sel=document.getElementById('micDeviceSelect');if(!sel)return;
+    try{
+        const devices=await navigator.mediaDevices.enumerateDevices();
+        const mics=devices.filter(d=>d.kind==='audioinput');
+        const cur=inputMicDeviceId;
+        sel.innerHTML='<option value="">Default</option>';
+        mics.forEach((d,i)=>{
+            const o=document.createElement('option');o.value=d.deviceId;
+            o.textContent=d.label||('Microphone '+(i+1));
+            if(d.deviceId===cur)o.selected=true;
+            sel.appendChild(o);
+        });
+    }catch(e){console.warn('enumerateDevices failed:',e);}
+}
+
+function onMicDeviceChange(){
+    const sel=document.getElementById('micDeviceSelect');if(!sel)return;
+    inputMicDeviceId=sel.value;saveInputSettings();
+    if(activeMicSource==='laptop'&&activeMicIdx!==null&&!isRecording){
+        const idx=activeMicIdx;stopMic().then(()=>openMic(idx));
+    }
+}
+
+function onAgcChange(v){
+    inputAgc=(v==='on');saveInputSettings();
+    // autoGainControl is a capture constraint; it needs a fresh getUserMedia.
+    if(activeMicSource==='laptop'&&activeMicIdx!==null&&!isRecording){
+        const idx=activeMicIdx;stopMic().then(()=>openMic(idx));
+    }
+}
+
+function applyManualGain(){
+    // Manual mode drives the capture GainNode; target mode holds it at unity and
+    // normalizes each clip after recording instead.
+    const g=(inputMode==='setting'&&inputLevelMode==='manual')?dbToGain(inputGainDb):1;
+    if(micGainNode&&micAudioCtx)micGainNode.gain.setTargetAtTime(g,micAudioCtx.currentTime,0.01);
+}
+
+function clampDb(v,lo,hi){v=parseInt(v);if(isNaN(v))v=0;return Math.max(lo,Math.min(hi,v));}
+
+function onInputGainChange(v){
+    inputGainDb=clampDb(v,-12,24);
+    const num=document.getElementById('inputGainNum');if(num)num.value=inputGainDb;
+    applyManualGain();saveInputSettings();
+}
+
+function onInputGainNum(v){
+    inputGainDb=clampDb(v,-12,24);
+    const sl=document.getElementById('inputGainSlider');if(sl)sl.value=inputGainDb;
+    const num=document.getElementById('inputGainNum');if(num)num.value=inputGainDb;
+    applyManualGain();saveInputSettings();
+}
+
+function onLevelModeChange(mode){
+    inputLevelMode=(mode==='target')?'target':'manual';
+    const mRow=document.getElementById('manualGainRow');
+    const tRow=document.getElementById('targetLevelRow');
+    const rRow=document.getElementById('relevelRow');
+    if(mRow)mRow.style.display=(inputLevelMode==='manual')?'flex':'none';
+    if(tRow)tRow.style.display=(inputLevelMode==='target')?'flex':'none';
+    if(rRow)rRow.style.display=(inputLevelMode==='target')?'flex':'none';
+    applyManualGain();  // target mode -> unity capture gain
+    saveInputSettings();
+}
+
+function onTargetLevelChange(v){
+    inputTargetDbfs=clampDb(v,-40,-3);
+    const num=document.getElementById('targetLevelNum');if(num)num.value=inputTargetDbfs;
+    saveInputSettings();
+}
+
+// Re-process every already-recorded clip to the current target level, in the
+// browser. Uses the stored raw PCM (classAudio). applyTargetLevel is idempotent
+// (it scales each clip TO the target, so re-pressing is safe). Embeddings are
+// NOT recomputed: normalization makes the model level-independent, so the
+// re-levelled clips produce identical features — this only changes the stored
+// waveform level (and the WAVs later exported to the ESP32 server).
+function relevelAllClips(){
+    if(inputMode!=='setting'||inputLevelMode!=='target'){
+        alert('Switch Level Mode to "Target level" first.');return;
+    }
+    if(isRecording){alert('Wait for the current recording to finish.');return;}
+    let n=0;
+    for(const cls of classes){
+        const clips=classAudio[cls.name];
+        if(!clips)continue;
+        for(let i=0;i<clips.length;i++){clips[i]=applyTargetLevel(clips[i],inputTargetDbfs);n++;}
+    }
+    render(); // redraw thumbnails from the updated classAudio
+    setStatus(n>0
+        ? ('Re-levelled '+n+' clip'+(n===1?'':'s')+' to '+inputTargetDbfs+' dBFS.')
+        : 'No recorded clips to re-level yet.');
+}
+
+// Post-capture: scale a recorded clip so its RMS sits at the target dBFS. Only
+// affects the stored waveform level (detection is normalized regardless). Gain
+// is capped so near-silent clips don't blow up the noise floor, and the result
+// is hard-limited to [-1,1] so it can't clip.
+function applyTargetLevel(pcm,targetDbfs){
+    let sumsq=0;for(let i=0;i<pcm.length;i++)sumsq+=pcm[i]*pcm[i];
+    const rms=Math.sqrt(sumsq/Math.max(1,pcm.length));
+    if(rms<1e-5)return pcm; // essentially silence — leave it alone
+    const curDbfs=20*Math.log10(rms);
+    let gain=dbToGain(targetDbfs-curDbfs);
+    gain=Math.max(0.1,Math.min(16,gain)); // cap boost/cut to +/-24 dB
+    const out=new Float32Array(pcm.length);
+    for(let i=0;i<pcm.length;i++){let s=pcm[i]*gain;out[i]=s>1?1:(s<-1?-1:s);}
+    return out;
+}
+
+// ── Persist input settings across sessions ────────────────────────────────
+function saveInputSettings(){
+    try{localStorage.setItem('curio_input_settings',JSON.stringify({
+        inputMode,inputLevelMode,inputGainDb,inputTargetDbfs,inputAgc,inputMicDeviceId
+    }));}catch(e){}
+}
+
+function loadInputSettings(){
+    let s=null;try{s=JSON.parse(localStorage.getItem('curio_input_settings')||'null');}catch(e){}
+    if(!s)return;
+    inputMode=s.inputMode==='setting'?'setting':'auto';
+    inputLevelMode=s.inputLevelMode==='target'?'target':'manual';
+    inputGainDb=clampDb(s.inputGainDb,-12,24);
+    inputTargetDbfs=clampDb(s.inputTargetDbfs,-40,-3);
+    inputAgc=!!s.inputAgc;
+    inputMicDeviceId=s.inputMicDeviceId||'';
+    // Reflect into the UI controls.
+    const modeSel=document.getElementById('inputModeSelect');if(modeSel)modeSel.value=inputMode;
+    const panel=document.getElementById('inputSettingPanel');if(panel)panel.classList.toggle('visible',inputMode==='setting');
+    const sl=document.getElementById('inputGainSlider');if(sl)sl.value=inputGainDb;
+    const num=document.getElementById('inputGainNum');if(num)num.value=inputGainDb;
+    const tn=document.getElementById('targetLevelNum');if(tn)tn.value=inputTargetDbfs;
+    const mRow=document.getElementById('manualGainRow');if(mRow)mRow.style.display=(inputLevelMode==='manual')?'flex':'none';
+    const tRow=document.getElementById('targetLevelRow');if(tRow)tRow.style.display=(inputLevelMode==='target')?'flex':'none';
+    const rRow=document.getElementById('relevelRow');if(rRow)rRow.style.display=(inputLevelMode==='target')?'flex':'none';
+    document.querySelectorAll('input[name="levelMode"]').forEach(r=>{r.checked=(r.value===inputLevelMode);});
+    document.querySelectorAll('input[name="agcMode"]').forEach(r=>{r.checked=(r.value===(inputAgc?'on':'off'));});
+    if(inputMode==='setting')populateMicDevices();
+}
+
+function startInputLevelMeter(){
+    stopInputLevelMeter();
+    const fill=document.getElementById('inputLevelFill');
+    const val=document.getElementById('inputLevelVal');
+    const clip=document.getElementById('inputLevelClip');
+    if(!fill||!val)return;
+    const buf=new Float32Array(micAnalyser?micAnalyser.fftSize:1024);
+    const tick=()=>{
+        if(!micAnalyser||activeMicSource!=='laptop'){micLevelRaf=null;return;}
+        micAnalyser.getFloatTimeDomainData(buf);
+        let peak=0,sumsq=0;
+        for(let i=0;i<buf.length;i++){const a=Math.abs(buf[i]);if(a>peak)peak=a;sumsq+=buf[i]*buf[i];}
+        const rms=Math.sqrt(sumsq/buf.length);
+        const dbfs=rms>1e-6?20*Math.log10(rms):-99;
+        // Map -60..0 dBFS to 0..100% for the bar.
+        const pct=Math.max(0,Math.min(100,(dbfs+60)/60*100));
+        fill.style.width=pct+'%';
+        val.textContent=(dbfs<=-99?'—':Math.round(dbfs))+' dBFS';
+        if(clip)clip.classList.toggle('active',peak>=0.999);
+        micLevelRaf=requestAnimationFrame(tick);
+    };
+    micLevelRaf=requestAnimationFrame(tick);
+}
+
+function stopInputLevelMeter(){
+    if(micLevelRaf){cancelAnimationFrame(micLevelRaf);micLevelRaf=null;}
+    const fill=document.getElementById('inputLevelFill');const val=document.getElementById('inputLevelVal');
+    const clip=document.getElementById('inputLevelClip');
+    if(fill)fill.style.width='0%';if(val)val.textContent='— dBFS';if(clip)clip.classList.remove('active');
+}
+
+// ── Mic capture ──────────────────────────────────────────────────────────
+async function openMic(classIdx){
+    if(!backbone||!embedExtractor){setStatus('Backbone not loaded yet.');return;}
+    if(micActive)await stopInference();
+    if(activeMicIdx!==null)await stopMic();
+    try{
+        const audioConstraints={sampleRate:SR,channelCount:1,echoCancellation:false,noiseSuppression:false,
+            autoGainControl:(inputMode==='setting'?inputAgc:false)};
+        if(inputMode==='setting'&&inputMicDeviceId)audioConstraints.deviceId={exact:inputMicDeviceId};
+        micStream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints});
+        micAudioCtx=new AudioContext({sampleRate:SR});  // Explicitly 16kHz to match ESP32-S3
+        micAnalyser=micAudioCtx.createAnalyser();micAnalyser.fftSize=1024;
+        const src=micAudioCtx.createMediaStreamSource(micStream);
+        // src -> gain -> analyser drives the waveform + level meter (gain = unity
+        // in Auto). In Setting mode the gain node also feeds a recorder dest so
+        // the Input Gain slider genuinely changes the captured clip; Auto mode
+        // leaves micRecordDest null and records the raw stream, exactly as before.
+        micGainNode=micAudioCtx.createGain();
+        micGainNode.gain.value=(inputMode==='setting'&&inputLevelMode==='manual')?dbToGain(inputGainDb):1;
+        src.connect(micGainNode);
+        micGainNode.connect(micAnalyser);
+        if(inputMode==='setting'){
+            micRecordDest=micAudioCtx.createMediaStreamDestination();
+            micGainNode.connect(micRecordDest);
+        }else{
+            micRecordDest=null;
+        }
+        activeMicSource='laptop';activeMicIdx=classIdx;render();animateMicVis(classIdx);
+        if(inputMode==='setting')startInputLevelMeter();
+        setStatus('Mic open — hold the button to record a clip.');
+    }catch(e){alert('Mic error: '+e.message);}
+}
+
+function dbToGain(db){return Math.pow(10,db/20);}
+
+async function stopMic(){
+    if(isRecording){setStatus('Recording in progress — please wait for this clip to finish.');return;}
+    clearInterval(recProgTimer);recProgTimer=null;
+    if(activeMicSource==='k230')await cleanupK230AudioSession();
+    if(activeMicSource==='esp32')await cleanupEsp32AudioSession();
+    stopInputLevelMeter();
+    if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
+    if(micAudioCtx){micAudioCtx.close().catch(()=>{});micAudioCtx=null;}
+    micAnalyser=null;micGainNode=null;micRecordDest=null;activeMicIdx=null;activeMicSource=null;isRecording=false;
+    k230Waveform=new Float32Array(1024);
+    esp32Waveform=new Float32Array(1024);
+    render();setStatus('Mic stopped.');
+}
+
+function animateMicVis(classIdx){
+    const canvas=document.getElementById('mic-vis-'+classIdx);
+    if(!canvas||activeMicIdx!==classIdx)return;
+    requestAnimationFrame(()=>animateMicVis(classIdx));
+    const ctx=canvas.getContext('2d');const W=canvas.width,H=canvas.height;
+    ctx.fillStyle='#060a10';ctx.fillRect(0,0,W,H);
+    if(activeMicSource==='k230'||activeMicSource==='esp32'){
+        const buf=activeMicSource==='k230'?k230Waveform:esp32Waveform;
+        const cls=classes[classIdx];
+        let peak=0;for(let i=0;i<buf.length;i++)peak=Math.max(peak,Math.abs(buf[i]));
+        const displayGain=activeMicSource==='esp32'
+            ?Math.min(24,0.9/Math.max(peak,0.02))
+            :Math.min(8,0.8/Math.max(peak,0.08));
+        ctx.beginPath();ctx.strokeStyle=cls?.color||'#f59e0b';ctx.lineWidth=1.2;
+        for(let i=0;i<W;i++){
+            const v=(buf[Math.floor(i*buf.length/W)]||0)*displayGain;
+            const y=H/2+v*(H/2-3);
+            i===0?ctx.moveTo(i,y):ctx.lineTo(i,y);
+        }
+        ctx.stroke();
+    }else if(micAnalyser){
+        const buf=new Uint8Array(micAnalyser.frequencyBinCount);
+        micAnalyser.getByteTimeDomainData(buf);
+        const cls=classes[classIdx];
+        ctx.beginPath();ctx.strokeStyle=cls?.color||'#4ade80';ctx.lineWidth=1.2;
+        for(let i=0;i<W;i++){const v=(buf[Math.floor(i*buf.length/W)]/128)-1;const y=H/2+v*(H/2-3);i===0?ctx.moveTo(i,y):ctx.lineTo(i,y);}
+        ctx.stroke();
+    }
+}
+
+async function recordClip(classIdx){
+    if(!backbone||!embedExtractor||activeMicSource!=='laptop'||activeMicIdx!==classIdx||isRecording)return;
+    const cls=classes[classIdx];
+    isRecording=true;recStartTime=Date.now();
+    const progFill=document.getElementById('rec-prog-'+classIdx);
+    if(progFill){const total=CLIP_MS;recProgTimer=setInterval(()=>{const elapsed=Date.now()-recStartTime;const pct=Math.min(100,(elapsed/total)*100);progFill.style.width=pct+'%';if(pct>=100)clearInterval(recProgTimer);},30);}
+    try{
+        const chunks=[];
+        // Record the gain-processed stream so the Setting-mode Input Gain slider
+        // actually affects the captured clip. Falls back to the raw stream.
+        const recStream=(micRecordDest&&micRecordDest.stream)||micStream;
+        const mr=new MediaRecorder(recStream);
+        mr.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
+        mr.start(100);
+        await sleep(CLIP_MS);
+        await new Promise(res=>{mr.onstop=res;mr.stop();});
+        clearInterval(recProgTimer);if(progFill)progFill.style.width='100%';
+        setStatus('Processing clip...');
+        const blob=new Blob(chunks,{type:chunks[0]?.type||'audio/webm'});
+        let pcm=await decodeAndResample(blob);
+        // Target-level mode: auto-scale this clip's RMS to the chosen dBFS.
+        if(inputMode==='setting'&&inputLevelMode==='target')pcm=applyTargetLevel(pcm,inputTargetDbfs);
+        if(!classAudio[cls.name])classAudio[cls.name]=[];
+        classAudio[cls.name].push(pcm.slice());
+        const emb=await embedClip(pcm);
+        if(!embeddings[cls.name])embeddings[cls.name]=[];
+        embeddings[cls.name].push(emb);
+        const count=embeddings[cls.name].length;
+        const countEl=document.getElementById('cc-count-'+classIdx);if(countEl)countEl.textContent=count+' clips';
+        const visCount=document.getElementById('vis-count-'+classIdx);if(visCount)visCount.textContent=count+' clips';
+        addThumb(classIdx,pcm,emb,count-1);renderStats();
+        trained=false;updateButtons();
+        setStatus('Clip '+count+' for "'+cls.name+'" — '+(pcm.length/SR).toFixed(2)+'s -> '+computeNWindows(CLIP_MS)+' windows -> '+EMBED_DIM+'-dim');
+    }catch(e){setStatus('Record error: '+e.message);console.error(e);}
+    finally{isRecording=false;clearInterval(recProgTimer);if(progFill)progFill.style.width='0%';}
+}
+
+function startHold(classIdx){
+    if(activeMicSource==='k230')recordK230Clip(classIdx);
+    else if(activeMicSource==='esp32')recordEsp32Clip(classIdx);
+    else recordClip(classIdx);
+}
+function stopHold(){}
+
+// ── Thumbnails ────────────────────────────────────────────────────────────
+let playingCtx=null;
+
+function drawWaveThumb(canvas,pcm,color){
+    const ctx=canvas.getContext('2d');const W=canvas.width,H=canvas.height;
+    ctx.fillStyle='#060a10';ctx.fillRect(0,0,W,H);
+    const step=Math.max(1,Math.floor(pcm.length/W));
+    ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=1;
+    for(let i=0;i<W;i++){let sum=0;for(let j=0;j<step;j++)sum+=Math.abs(pcm[i*step+j]||0);const amp=(sum/step)*H*2.5;const y=H/2-amp/2;i===0?ctx.moveTo(i,H/2):ctx.lineTo(i,Math.max(1,Math.min(H-1,y)));}
+    ctx.stroke();
+}
+
+async function playClip(classIdx,clipIdx,btnEl){
+    if(playingCtx){try{playingCtx.close();}catch{}playingCtx=null;}
+    document.querySelectorAll('.thumb-play.playing').forEach(b=>{b.classList.remove('playing');b.textContent='▶';});
+    const cls=classes[classIdx];
+    const pcm=(classAudio[cls.name]||[])[clipIdx];
+    if(!pcm){setStatus('No audio stored for this clip.');return;}
+    try{
+        playingCtx=new AudioContext({sampleRate:SR});
+        const buf=playingCtx.createBuffer(1,pcm.length,SR);buf.copyToChannel(pcm,0);
+        const s=playingCtx.createBufferSource();s.buffer=buf;s.connect(playingCtx.destination);s.start(0);
+        if(btnEl){btnEl.classList.add('playing');btnEl.textContent='■';}
+        s.onended=()=>{if(btnEl){btnEl.classList.remove('playing');btnEl.textContent='▶';}playingCtx=null;};
+    }catch(e){setStatus('Playback error: '+e.message);}
+}
+
+function addThumb(classIdx,pcm,emb,clipIdx){
+    const cls=classes[classIdx];
+    const thumbsEl=document.getElementById('thumbs-'+classIdx);if(!thumbsEl)return;
+    const wrap=document.createElement('div');wrap.className='thumb';
+    const cv=document.createElement('canvas');cv.width=44;cv.height=26;
+    drawWaveThumb(cv,pcm,cls.color);
+    const del=document.createElement('button');del.className='thumb-del';del.textContent='X';
+    del.onclick=()=>{wrap.remove();if(classAudio[cls.name])classAudio[cls.name].splice(clipIdx,1);if(embeddings[cls.name])embeddings[cls.name].splice(clipIdx,1);const count=(embeddings[cls.name]||[]).length;const ce=document.getElementById('cc-count-'+classIdx);if(ce)ce.textContent=count+' clips';renderStats();trained=false;updateButtons();};
+    const play=document.createElement('button');play.className='thumb-play';play.textContent='▶';play.title=(pcm.length/SR).toFixed(2)+'s @ 16kHz';
+    (()=>{const pi=clipIdx;play.onclick=()=>playClip(classIdx,pi,play);})();
+    wrap.appendChild(cv);wrap.appendChild(del);wrap.appendChild(play);thumbsEl.appendChild(wrap);
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function render(){renderClasses();renderStats();initOutputBars();}
+
+function renderClasses(){
+    const container=document.getElementById('classList');container.innerHTML='';
+    classes.forEach((cls,idx)=>{
+        const count=(embeddings[cls.name]||[]).length;
+        const isRec=activeMicIdx===idx;
+        const isNoiseCls=isNoise(cls.name);
+        const card=document.createElement('div');card.className='class-card';
+        card.innerHTML=`
+        <div class="class-header">
+            <input class="class-name" style="color:${cls.color}" value="${cls.name}"
+                onchange="renameClass(${idx},this.value)" oninput="renameClass(${idx},this.value)"/>
+            <span class="sample-count" id="cc-count-${idx}">${count} clips</span>
+            <button class="remove-btn" onclick="removeClass(${idx})">X</button>
+        </div>
+        ${isNoiseCls?'<div><span class="noise-badge">🔇 NOISE CLASS</span></div>':''}
+        ${isRec?`
+        <div class="mic-vis-wrap">
+            <canvas id="mic-vis-${idx}" class="mic-vis-canvas" width="300" height="72"></canvas>
+            <div class="mic-vis-label"><span class="rec-dot"></span> ${activeMicSource==='k230'?'K230 MIC LIVE':activeMicSource==='esp32'?'ESP32-S3 MIC LIVE':'RECORDING'}</div>
+            <div class="mic-vis-count" id="vis-count-${idx}">${count} clips</div>
+            <div class="rec-progress"><div class="rec-progress-fill" id="rec-prog-${idx}"></div></div>
+        </div>
+        <div class="cam-btns">
+            <button class="hold-btn" style="background:${cls.color}"
+                onmousedown="startHold(${idx})" onmouseup="stopHold()"
+                onmouseleave="stopHold()" ontouchstart="startHold(${idx})" ontouchend="stopHold()">
+                🎤 Hold to Record (${CLIP_MS/1000}s)
+            </button>
+            <button class="stop-btn" onclick="stopMic()">Stop</button>
+        </div>`:`
+        <div class="add-btns">
+            <button class="add-btn" style="color:${cls.color};border-color:${cls.color};background:${cls.color}18" onclick="openMic(${idx})">🎤 Record</button>
+            <button class="add-btn k230-mic-btn" id="k230-mic-btn-${idx}" onclick="openK230Mic(${idx})">K230 Mic</button>
+            <button class="add-btn esp32-mic-btn" id="esp32-mic-btn-${idx}" onclick="openEsp32Mic(${idx})">ESP32-S3 Mic</button>
+            <button class="add-btn" style="color:${cls.color};border-color:${cls.color};background:${cls.color}18" onclick="uploadWav(${idx})">⬆ Upload WAV</button>
+        </div>`}
+        ${isNoiseCls?'<div class="noise-hint">🔇 Record silence or ambient sound — no speech</div>':''}
+        <div class="thumbs" id="thumbs-${idx}"></div>
+        ${count>0?`<div class="class-actions">
+            <button class="extract-btn-card" style="color:${cls.color};border-color:${cls.color};background:${cls.color}10" onclick="extractClips(${idx})">
+                ⧉ Extract (x2) <span style="font-size:10px;font-weight:400;color:#94a3b8">${count}->${count*2}</span>
+            </button>
+            <button class="download-btn-card" onclick="downloadClassClips(${idx})">⬇ Download Clips (${count} WAV)</button>
+        </div>`:''}`;
+        container.appendChild(card);
+        const thumbsEl=card.querySelector('#thumbs-'+idx);
+        const audioClips=classAudio[cls.name]||[];
+        audioClips.forEach((pcm,ci)=>{
+            const wrap=document.createElement('div');wrap.className='thumb';
+            const cv=document.createElement('canvas');cv.width=44;cv.height=26;
+            drawWaveThumb(cv,pcm,cls.color);
+            const del=document.createElement('button');del.className='thumb-del';del.textContent='X';
+            del.onclick=(()=>{const ci2=ci;return()=>{wrap.remove();if(classAudio[cls.name])classAudio[cls.name].splice(ci2,1);if(embeddings[cls.name])embeddings[cls.name].splice(ci2,1);const c=(embeddings[cls.name]||[]).length;const ce=document.getElementById('cc-count-'+idx);if(ce)ce.textContent=c+' clips';renderStats();trained=false;updateButtons();};})();
+            const play=document.createElement('button');play.className='thumb-play';play.textContent='▶';
+            (()=>{const pi=ci;play.onclick=()=>playClip(idx,pi,play);})();
+            wrap.appendChild(cv);wrap.appendChild(del);wrap.appendChild(play);thumbsEl.appendChild(wrap);
+        });
+        if(isRec&&(micAnalyser||activeMicSource==='k230'||activeMicSource==='esp32'))animateMicVis(idx);
+    });
+}
+
+function renderStats(){
+    document.getElementById('statList').innerHTML=classes.map(cls=>`
+        <div class="stat-row">
+            <div class="stat-dot" style="background:${cls.color}"></div>
+            <span class="stat-name">${cls.name}</span>
+            <span class="stat-count">${(embeddings[cls.name]||[]).length} clips</span>
+        </div>`).join('');
+}
+
+// ── Class management ──────────────────────────────────────────────────────
+function addClass(){const id=nextClassId++;classes.push({id,name:'Word'+id,color:COLORS[(id-1)%COLORS.length]});trained=false;headModel=null;classNamesCopy=[];updateButtons();render();}
+function addNoiseClass(){if(classes.find(c=>isNoise(c.name))){alert('Noise class already exists!');return;}classes.push({id:nextClassId++,name:'Background Noise',color:'#fbbf24'});render();setStatus('Noise class added — record silence or ambient room sound.');}
+async function removeClass(idx){if(classes.length<=2){alert('Need at least 2 classes');return;}if(isRecording){alert('Wait for recording to finish first.');return;}if(activeMicIdx===idx)await stopMic();const cls=classes[idx];delete embeddings[cls.name];delete classAudio[cls.name];classes.splice(idx,1);trained=false;updateButtons();render();}
+function renameClass(idx,name){const cls=classes[idx];const old=cls.name;if(embeddings[old]){embeddings[name]=embeddings[old];delete embeddings[old];}if(classAudio[old]){classAudio[name]=classAudio[old];delete classAudio[old];}cls.name=name;
+    // Keep the train-time label list in sync so preview AND deploys keep the
+    // correct model-output -> name mapping after a rename (order unchanged).
+    if(classNamesCopy.length===classes.length&&classNamesCopy[idx]===old)classNamesCopy[idx]=name;
+    renderStats();const lEl=document.getElementById('output-label-'+idx);if(lEl){lEl.textContent=name;lEl.style.color=cls.color;}}
+
+// ── Extract x2 ────────────────────────────────────────────────────────────
+function extractClips(classIdx){
+    const cls=classes[classIdx];const embs=embeddings[cls.name]||[];const audio=classAudio[cls.name]||[];
+    if(embs.length===0){alert('No clips to extract.');return;}
+    embeddings[cls.name]=[...embs,...embs.map(e=>e.slice())];
+    classAudio[cls.name]=[...audio,...audio.map(p=>p.slice())];
+    const newCount=embeddings[cls.name].length;
+    const countEl=document.getElementById('cc-count-'+classIdx);if(countEl)countEl.textContent=newCount+' clips';
+    renderStats();trained=false;updateButtons();
+    const thumbsEl=document.getElementById('thumbs-'+classIdx);
+    if(thumbsEl){audio.forEach((pcm,i)=>{const ni=embs.length+i;const wrap=document.createElement('div');wrap.className='thumb';const cv=document.createElement('canvas');cv.width=44;cv.height=26;drawWaveThumb(cv,pcm,cls.color);const del=document.createElement('button');del.className='thumb-del';del.textContent='X';del.onclick=()=>{wrap.remove();if(embeddings[cls.name])embeddings[cls.name].splice(ni,1);if(classAudio[cls.name])classAudio[cls.name].splice(ni,1);renderStats();};const play=document.createElement('button');play.className='thumb-play';play.textContent='▶';(()=>{const pi=ni;play.onclick=()=>playClip(classIdx,pi,play);})();wrap.appendChild(cv);wrap.appendChild(del);wrap.appendChild(play);thumbsEl.appendChild(wrap);});}
+    setStatus('"'+cls.name+'" doubled to '+newCount+' clips. Re-train.');
+}
+
+// ── Upload WAV ────────────────────────────────────────────────────────────
+function uploadWav(classIdx){
+    const cls=classes[classIdx];
+    const input=document.createElement('input');input.type='file';input.accept='audio/*';input.multiple=true;
+    input.onchange=async e=>{
+        for(const file of Array.from(e.target.files)){
+            try{
+                setStatus('Processing "'+file.name+'"...');
+                const ab=await file.arrayBuffer();const decCtx=new AudioContext();const decoded=await decCtx.decodeAudioData(ab);await decCtx.close();
+                const targetLen=Math.ceil(decoded.duration*SR);const offCtx=new OfflineAudioContext(1,targetLen,SR);const src=offCtx.createBufferSource();src.buffer=decoded;src.connect(offCtx.destination);src.start(0);const rendered=await offCtx.startRendering();const pcmFull=rendered.getChannelData(0).slice();
+                const clipSamples=Math.ceil(SR*(CLIP_MS/1000));const numClips=Math.max(1,Math.floor(pcmFull.length/clipSamples));
+                for(let ci=0;ci<numClips;ci++){
+                    const chunk=pcmFull.slice(ci*clipSamples,(ci+1)*clipSamples);const padded=new Float32Array(clipSamples);padded.set(chunk.slice(0,clipSamples));
+                    const emb=await embedClip(padded);
+                    if(!embeddings[cls.name])embeddings[cls.name]=[];if(!classAudio[cls.name])classAudio[cls.name]=[];
+                    embeddings[cls.name].push(emb);classAudio[cls.name].push(padded);
+                    const count=embeddings[cls.name].length;const countEl=document.getElementById('cc-count-'+classIdx);if(countEl)countEl.textContent=count+' clips';
+                    addThumb(classIdx,padded,emb,count-1);renderStats();
+                    setStatus('WAV clip '+(ci+1)+'/'+numClips+' embedded for "'+cls.name+'"');
+                }
+                trained=false;updateButtons();setStatus('"'+file.name+'" -> '+numClips+' clips added for "'+cls.name+'"');
+            }catch(err){setStatus('Upload error: '+err.message);console.error(err);}
+        }
+    };
+    input.click();
+}
+
+// ── Download ──────────────────────────────────────────────────────────────
+async function downloadClassClips(classIdx){
+    const cls=classes[classIdx];const clips=classAudio[cls.name]||[];
+    if(clips.length===0){alert('No clips recorded yet.');return;}
+    const zip=new JSZip();const fn=cls.name.replace(/[^a-zA-Z0-9_-]/g,'_');const folder=zip.folder(fn);
+    clips.forEach((pcm,i)=>folder.file(fn+'_'+String(i+1).padStart(3,'0')+'.wav',pcmToWav(pcm)));
+    zip.file('labels.txt',classes.map(c=>c.name).join('\n'));
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+    downloadBlob(blob,fn+'_clips.zip');
+    setStatus('Downloaded '+clips.length+' WAV clips for "'+cls.name+'"');
+}
+
+async function downloadAllClips(){
+    const total=Object.values(classAudio).reduce((s,a)=>s+a.length,0);
+    if(total===0){alert('No clips recorded yet.');return;}
+    const zip=new JSZip();
+    classes.forEach(cls=>{const clips=classAudio[cls.name]||[];if(!clips.length)return;const fn=cls.name.replace(/[^a-zA-Z0-9_-]/g,'_');const folder=zip.folder(fn);clips.forEach((pcm,i)=>folder.file(fn+'_'+String(i+1).padStart(3,'0')+'.wav',pcmToWav(pcm)));});
+    zip.file('labels.txt',classes.map(c=>c.name).join('\n'));
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+    downloadBlob(blob,'voice_dataset.zip');
+    setStatus('Downloaded all '+total+' clips as voice_dataset.zip');
+}
+
+// ── Output bars ────────────────────────────────────────────────────────────
+function initOutputBars(){
+    document.getElementById('outputBars').innerHTML=classes.map((cls,i)=>`
+        <div class="output-row">
+            <span class="output-label" style="color:${cls.color}" id="output-label-${i}">${cls.name}</span>
+            <div class="output-bar-wrap">
+                <div class="output-bar-fill" id="output-bar-${i}" style="width:0%;background:${cls.color}">
+                    <span class="output-bar-pct" id="output-pct-${i}"></span>
+                </div>
+                <span class="output-bar-pct-outside" id="output-pct-out-${i}">0%</span>
+            </div>
+        </div>`).join('');
+}
+
+function updateOutputBars(probs){
+    const best=probs.reduce((a,b)=>a.score>b.score?a:b);
+    const isAbove=best.score>=THRESH;const isNoiseCls=isNoise(best.className);const detected=isAbove&&!isNoiseCls;
+    probs.forEach((p,i)=>{
+        const pct=Math.round(p.score*100);const cls=classes.find(c=>c.name===p.className);const color=cls?.color||COLORS[i%COLORS.length];
+        const bEl=document.getElementById('output-bar-'+i);const pEl=document.getElementById('output-pct-'+i);const oEl=document.getElementById('output-pct-out-'+i);const lEl=document.getElementById('output-label-'+i);
+        if(!bEl)return;bEl.style.width=pct+'%';bEl.style.background=color;
+        if(pct>20){pEl.textContent=pct+'%';oEl.textContent='';}else{pEl.textContent='';oEl.textContent=pct+'%';}
+        if(lEl){lEl.textContent=p.className;lEl.style.color=color;}
+    });
+    const el=document.getElementById('detectStatus');const pct=(best.score*100).toFixed(1);const color=classes.find(c=>c.name===best.className)?.color||'#7c3aed';
+    if(detected){
+        el.style.background=color+'14';el.style.borderBottom='2px solid '+color+'30';
+        el.innerHTML='<div style="width:36px;height:36px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🎤</div><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:800;color:'+color+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+best.className+'</div><div style="font-size:11px;color:#64748b;margin-top:1px">Heard — '+pct+'% confidence</div></div><div style="font-size:22px;font-weight:900;color:'+color+';flex-shrink:0">'+Math.round(best.score*100)+'%</div>';
+    }else if(isNoiseCls&&isAbove){
+        el.style.background='#fafafa';el.style.borderBottom='2px dashed #e2e8f0';
+        el.innerHTML='<div style="width:36px;height:36px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🔇</div><div style="flex:1"><div style="font-size:14px;font-weight:700;color:#64748b">Background Noise</div><div style="font-size:11px;color:#94a3b8;margin-top:1px">No keyword — '+pct+'%</div></div>';
+    }else{
+        el.style.background='#fafafa';el.style.borderBottom='1px solid #f1f5f9';
+        el.innerHTML='<div style="width:36px;height:36px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🔍</div><div style="flex:1"><div style="font-size:14px;font-weight:700;color:#94a3b8">Listening...</div><div style="font-size:11px;color:#cbd5e1;margin-top:1px">Best: '+best.className+' at '+pct+'% (need '+Math.round(THRESH*100)+'%)</div></div>';
+    }
+}
+
+// ── Train ─────────────────────────────────────────────────────────────────
+function setTrainState(html){document.getElementById('trainStateBox').innerHTML=html;}
+
+async function trainModel(){
+    if(!backbone||!embedExtractor){alert('Backbone not loaded yet.');return;}
+    const missing=classes.filter(c=>(embeddings[c.name]||[]).length<3);
+    if(missing.length>0){alert('Need at least 3 clips per class.\n\nMissing:\n'+missing.map(c=>'  "'+c.name+'": '+(embeddings[c.name]||[]).length+' clips').join('\n'));return;}
+    document.getElementById('trainBtn').disabled=true;
+    trained=false;headModel=null;classNamesCopy=[];updateButtons();
+    const show=(pct,msg)=>{setTrainState('<div class="state-progress"><div class="progress-pct">'+pct+'%</div><div class="progress-bar"><div class="progress-fill" style="width:'+pct+'%"></div></div><div class="progress-label">'+msg+'</div></div>');setStatus(msg);};
+    try{
+        show(5,'Stacking embeddings...');await tf.nextFrame();
+
+        // ── Collect raw embeddings ────────────────────────────────────────
+        const rawXs=[],rawYs=[],nc=classes.length;let featSize=0;
+        for(let ci=0;ci<classes.length;ci++){
+            const embs=embeddings[classes[ci].name]||[];
+            for(const emb of embs){rawXs.push(Array.from(emb));rawYs.push(ci);featSize=emb.length;}
+        }
+        if(rawXs.length===0)throw new Error('No embeddings found');
+
+        // ── Gaussian noise augmentation ───────────────────────────────────
+        // Embeddings are L2-normalised unit vectors (magnitude=1.0)
+        // sigma=0.04 → 4% perturbation (meaningful but not destructive)
+        // sigma=0.08 → 8% perturbation (larger variation, more robust)
+        // Each original produces 2 copies → 3x total dataset size
+        function randn(){
+            let u=0,v=0;
+            while(u===0)u=Math.random();
+            while(v===0)v=Math.random();
+            return Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v);
+        }
+        const xs=[...rawXs],ys=[...rawYs];
+        const baseLen=rawXs.length;
+        for(let i=0;i<baseLen;i++){
+            const base=rawXs[i],label=rawYs[i];
+            xs.push(base.map(v=>v+randn()*0.04)); ys.push(label);
+            xs.push(base.map(v=>v+randn()*0.08)); ys.push(label);
+        }
+
+        show(15,'Building MLP ('+xs.length+' samples, feat:'+featSize+')...');
+        await tf.nextFrame();
+
+        // ── MLP — fixed for small datasets ───────────────────────────────
+        // Fixes vs previous broken version:
+        // 1. NO L2 regulariser: inputs are L2-normalised; L2 reg collapses
+        //    weights to zero → bias terms dominate → always predicts class 0
+        // 2. Dropout 0.1 / 0.05: small dataset needs signal flow, not masking
+        // 3. batchSize = ALL samples: full-batch gradient = stable convergence
+        // 4. validationSplit = 0: use every sample for training
+        // 5. EPOCHS = 300: more epochs compensate for stable full-batch GD
+        const xsT=tf.tensor2d(xs);
+        const ysT=tf.oneHot(tf.tensor1d(ys,'int32'),nc);
+        headModel=tf.sequential({layers:[
+            tf.layers.dense({inputShape:[featSize],units:256,activation:'relu'}),
+            tf.layers.dropout({rate:0.1}),
+            tf.layers.dense({units:128,activation:'relu'}),
+            tf.layers.dropout({rate:0.05}),
+            tf.layers.dense({units:nc,activation:'softmax'})
+        ]});
+        headModel.compile({
+            optimizer:tf.train.adam(0.001),
+            loss:'categoricalCrossentropy',
+            metrics:['accuracy']
+        });
+
+        show(20,'Training '+xs.length+' samples, 300 epochs, full batch...');
+        const EPOCHS=300;
+        let bestAcc=0;
+        await headModel.fit(xsT,ysT,{
+            epochs:EPOCHS,
+            batchSize:xs.length,
+            validationSplit:0,
+            shuffle:true,
+            callbacks:{onEpochEnd:async(epoch,logs)=>{
+                const pct=20+Math.round(((epoch+1)/EPOCHS)*78);
+                const acc=logs?.acc!=null?(logs.acc*100).toFixed(0)+'%':'?';
+                if((logs?.acc||0)>bestAcc)bestAcc=logs.acc||0;
+                if(epoch%5===0||epoch===EPOCHS-1){
+                    show(pct,'Epoch '+(epoch+1)+'/'+EPOCHS
+                        +' acc:'+acc
+                        +' best:'+(bestAcc*100).toFixed(0)+'%');
+                    await tf.nextFrame();
+                }
+            }}
+        });
+        xsT.dispose();ysT.dispose();
+        classNamesCopy=classes.map(c=>c.name);trained=true;
+        const total=rawXs.length;
+        setStatus('Trained on '+total+' clips ('+xs.length+' augmented) — '
+            +EMBED_DIM+'-dim, '+computeNWindows(CLIP_MS)+'x windows. Start mic to test.');
+        setTrainState('<div class="state-done"><div class="icon">✅</div>'
+            +'<h3>Model Trained!</h3>'
+            +'<p>'+total+' clips · '+classes.length+' classes</p>'
+            +'<p style="font-size:11px;margin-top:4px;color:#7c3aed;font-weight:700">'
+            +EMBED_DIM+'-dim · '+xs.length+' augmented · best acc: '+(bestAcc*100).toFixed(0)+'%</p>'
+            +'<button class="retrain-btn" onclick="resetTrain()">Retrain</button></div>');
+        initOutputBars();updateButtons();
+    }catch(e){
+        console.error('Train error:',e);
+        alert('Training failed: '+e.message);
+        setStatus('Training failed: '+e.message);
+        setTrainState('<div class="state-ready"><div class="icon">🧠</div><h3>Ready to train.</h3><p>Fix error and try again.</p></div>');
+    }finally{document.getElementById('trainBtn').disabled=false;}
+}
+
+async function resetTrain(){await stopInference();trained=false;headModel=null;classNamesCopy=[];updateButtons();setTrainState('<div class="state-ready"><div class="icon">🧠</div><h3>Ready to train.</h3><p>Add at least 5 clips per class<br>then press Train.</p></div>');setStatus('');initOutputBars();}
+
+// ── Live inference ────────────────────────────────────────────────────────
+function restartInferTimer(){clearInterval(inferTimer);inferTimer=setInterval(runInference,INFER_MS);}
+
+async function runInference(){
+    if(!micActive||!headModel||!embedExtractor||!inferBuf)return;
+    const clipSamples=Math.ceil(SR*(CLIP_MS/1000));
+    const endPos=inferBufPos;
+    if(endPos<clipSamples||inferRunning||endPos===inferLastProcessedPos)return;
+    inferRunning=true;
+    try{
+        const clip=new Float32Array(clipSamples);const bufLen=inferBuf.length;
+        for(let i=0;i<clipSamples;i++){const pos=((endPos-clipSamples+i)%bufLen+bufLen)%bufLen;clip[i]=inferBuf[pos];}
+        const emb=await embedClip(clip);const embT=tf.tensor2d([Array.from(emb)]);
+        const predT=headModel.predict(embT);const probs=predT.dataSync();
+        predT.dispose();embT.dispose();
+        let displayProbs=probs;
+        if(inferSource==='esp32'){
+            const alpha=0.35;
+            if(!esp32SmoothedProbs||esp32SmoothedProbs.length!==probs.length){
+                esp32SmoothedProbs=Float32Array.from(probs);
+            }else{
+                for(let i=0;i<probs.length;i++){
+                    esp32SmoothedProbs[i]=alpha*probs[i]+(1-alpha)*esp32SmoothedProbs[i];
+                }
+            }
+            displayProbs=esp32SmoothedProbs;
+        }
+        const predictions=classNamesCopy.map((name,i)=>({className:name,score:displayProbs[i]}));
+        updateOutputBars(predictions);
+        inferLastProcessedPos=endPos;
+        if(inferSource==='k230')setStatus('K230 live preview — listening and classifying...');
+        if(inferSource==='esp32')setStatus('ESP32-S3 live preview — listening and classifying...');
+    }catch(e){console.warn('Inference error:',e.message);}
+    finally{inferRunning=false;}
+}
+
+function drawWaveVis(){
+    if(!micActive)return;visFrame=requestAnimationFrame(drawWaveVis);
+    const canvas=document.getElementById('waveCanvas');if(!canvas)return;
+    const ctx=canvas.getContext('2d');const W=canvas.clientWidth||600,H=canvas.clientHeight||90;
+    canvas.width=W;canvas.height=H;ctx.fillStyle='#0e1320';ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle='#1e2a3d';ctx.lineWidth=1;for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(0,H/4*i);ctx.lineTo(W,H/4*i);ctx.stroke();}
+    ctx.beginPath();ctx.strokeStyle='#7c3aed';ctx.lineWidth=1.5;
+    if(inferSource==='k230'||inferSource==='esp32'){
+        const buf=inferSource==='k230'?k230InferWaveform:esp32InferWaveform;
+        let peak=0;for(let i=0;i<buf.length;i++)peak=Math.max(peak,Math.abs(buf[i]));
+        const displayGain=inferSource==='esp32'
+            ?Math.min(24,0.9/Math.max(peak,0.02))
+            :Math.min(8,0.8/Math.max(peak,0.08));
+        for(let i=0;i<W;i++){const v=(buf[Math.floor(i*buf.length/W)]||0)*displayGain;const y=H/2+v*(H/2-5);i===0?ctx.moveTo(i,y):ctx.lineTo(i,y);}
+    }else if(inferAnalyser){
+        const buf=new Uint8Array(inferAnalyser.frequencyBinCount);inferAnalyser.getByteTimeDomainData(buf);
+        for(let i=0;i<W;i++){const v=(buf[Math.floor(i*buf.length/W)]/128)-1;const y=H/2+v*(H/2-5);i===0?ctx.moveTo(i,y):ctx.lineTo(i,y);}
+    }
+    ctx.stroke();
+}
+
+function appendInferencePcm(pcm){
+    if(!inferBuf)return;
+    for(let i=0;i<pcm.length;i++){
+        inferBuf[inferBufPos%inferBuf.length]=pcm[i];
+        inferBufPos++;
+    }
+}
+
+async function stopK230InferencePump(){
+    k230InferActive=false;
+    if(k230InferPromise){
+        await k230InferPromise.catch(()=>{});
+        k230InferPromise=null;
+    }
+}
+
+function setPreviewStoppedUi(message='Mic stopped.'){
+    document.getElementById('wavePlaceholder').style.display='flex';
+    const canvas=document.getElementById('waveCanvas');
+    if(canvas){const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);}
+    const laptopBtn=document.getElementById('micBtn');if(laptopBtn)laptopBtn.textContent='Laptop Mic';
+    const k230Btn=document.getElementById('k230InferBtn');if(k230Btn)k230Btn.textContent='K230 Mic';
+    const esp32Btn=document.getElementById('esp32InferBtn');if(esp32Btn)esp32Btn.textContent='ESP32-S3 Mic';
+    setStatus(message);
+}
+
+function startK230InferencePump(){
+    if(k230InferActive||!k230AudioReady)return;
+    k230InferActive=true;
+    k230InferPromise=(async()=>{
+        let fatalError=null;
+        while(k230InferActive&&micActive&&inferSource==='k230'){
+            try{
+                const output=await k230MicExecPy('print(_km_s.read().hex())',5000);
+                const pcm=k230HexToPcm(output);
+                k230InferWaveform=pcm;
+                appendInferencePcm(pcm);
+            }catch(e){
+                if(!k230InferActive)break;
+                const isTimeout=String(e?.message||e).toLowerCase().includes('timed out');
+                if(isTimeout&&k230MicConnected){
+                    setStatus('K230 preview timed out — recovering...');
+                    try{
+                        await recoverK230AfterTimeout();
+                        await setupK230AudioSession();
+                        setStatus('K230 live preview recovered — listening...');
+                        continue;
+                    }catch(recoveryError){
+                        fatalError=recoveryError;
+                    }
+                }else{
+                    fatalError=e;
+                }
+                break;
+            }
+        }
+        if(fatalError&&micActive&&inferSource==='k230'){
+            console.error('K230 live inference failed:',fatalError);
+            await closeK230MicTransport();
+            k230InferActive=false;micActive=false;inferSource=null;inferBuf=null;inferBufPos=0;
+            setPreviewStoppedUi('K230 live preview stopped: '+fatalError.message);
+        }
+    })();
+}
+
+function startEsp32InferencePump(){
+    if(esp32InferActive||!esp32MicConnected)return;
+    esp32InferActive=true;
+    esp32InferPromise=(async()=>{
+        let fatalError=null;
+        try{
+            await esp32MicRunExclusive(async()=>{
+                esp32MicLines.length=0;
+                await esp32MicWrite('AUDIO_STREAM_START 1024\n');
+                let begun=false,expectedSequence=0;
+                while(true){
+                    const line=await esp32MicNextLine(Date.now()+10000);
+                    if(line.startsWith('SERIAL ERR')){
+                        throw new Error(line.replace(/^SERIAL ERR\s*/,''));
+                    }
+                    if(line.startsWith('SERIAL AUDIO_STREAM_BEGIN ')){
+                        const parts=line.split(/\s+/);
+                        const rate=parseInt(parts[2],10);
+                        const samples=parseInt(parts[3],10);
+                        if(rate!==SR||samples!==1024){
+                            throw new Error('ESP32-S3 returned unexpected stream format');
+                        }
+                        begun=true;expectedSequence=0;
+                        continue;
+                    }
+                    if(line.startsWith('SERIAL AUDIO_STREAM_CHUNK ')){
+                        if(!begun)continue;
+                        const match=line.match(/^SERIAL AUDIO_STREAM_CHUNK\s+(\d+)\s+(.+)$/);
+                        if(!match)throw new Error('ESP32-S3 returned a malformed stream chunk');
+                        const sequence=parseInt(match[1],10);
+                        if(sequence!==expectedSequence){
+                            throw new Error('ESP32-S3 audio stream lost chunk '+expectedSequence+' (received '+sequence+')');
+                        }
+                        let binary;
+                        try{binary=atob(match[2]);}catch{throw new Error('ESP32-S3 returned invalid stream audio');}
+                        if(binary.length!==2048){
+                            throw new Error('ESP32-S3 stream chunk has '+binary.length+' bytes; expected 2048');
+                        }
+                        const raw=new Uint8Array(binary.length);
+                        for(let i=0;i<binary.length;i++)raw[i]=binary.charCodeAt(i);
+                        const pcm=pcm16BytesToFloat32(raw);
+                        expectedSequence++;
+                        if(esp32InferActive&&micActive&&inferSource==='esp32'){
+                            esp32InferWaveform=pcm;
+                            appendInferencePcm(pcm);
+                        }
+                        continue;
+                    }
+                    if(line.startsWith('SERIAL AUDIO_STREAM_END'))break;
+                }
+            });
+        }catch(e){
+            if(esp32InferActive){
+                fatalError=e;
+                await esp32MicWrite('AUDIO_STREAM_STOP\n').catch(()=>{});
+            }
+        }
+        esp32InferActive=false;
+        if(fatalError&&micActive&&inferSource==='esp32'){
+            console.error('ESP32-S3 live inference failed:',fatalError);
+            await closeEsp32MicTransport();
+            esp32InferActive=false;micActive=false;inferSource=null;inferBuf=null;inferBufPos=0;
+            setPreviewStoppedUi('ESP32-S3 live preview stopped: '+fatalError.message);
+        }
+    })();
+}
+
+async function toggleMic(){
+    if(!trained||!headModel){alert('Train first!');return;}
+    if(micActive&&inferSource==='laptop'){await stopInference();return;}
+    if(micActive)await stopInference();
+    if(activeMicIdx!==null)await stopMic();
+    try{
+        inferStream=await navigator.mediaDevices.getUserMedia({audio:{sampleRate:SR,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+        inferCtx=new AudioContext({sampleRate:SR});inferAnalyser=inferCtx.createAnalyser();inferAnalyser.fftSize=2048;
+        const src=inferCtx.createMediaStreamSource(inferStream);src.connect(inferAnalyser);
+        inferBuf=new Float32Array(SR*5);inferBufPos=0;inferLastProcessedPos=-1;
+        inferProc=inferCtx.createScriptProcessor(4096,1,1);
+        inferProc.onaudioprocess=e=>{const inp=e.inputBuffer.getChannelData(0);for(let i=0;i<inp.length;i++){inferBuf[inferBufPos%inferBuf.length]=inp[i];inferBufPos++;}};
+        src.connect(inferProc);inferProc.connect(inferCtx.destination);
+        document.getElementById('wavePlaceholder').style.display='none';
+        micActive=true;inferSource='laptop';
+        document.getElementById('micBtn').textContent='Stop Laptop';
+        drawWaveVis();restartInferTimer();setStatus('Laptop live preview — speak into the mic');
+    }catch(e){alert('Mic error: '+e.message);}
+}
+
+async function toggleK230Inference(){
+    if(!trained||!headModel){alert('Train first!');return;}
+    if(micActive&&inferSource==='k230'){await stopInference();return;}
+    if(micActive)await stopInference();
+    if(activeMicIdx!==null)await stopMic();
+    const btn=document.getElementById('k230InferBtn');
+    if(btn){btn.disabled=true;btn.textContent='Connecting...';}
+    try{
+        setStatus('Select the K230 USB serial port for live preview...');
+        await ensureK230MicConnected();
+        await k230MicEnterRawREPL();
+        await setupK230AudioSession();
+        inferBuf=new Float32Array(SR*5);inferBufPos=0;inferLastProcessedPos=-1;
+        k230InferWaveform=new Float32Array(1024);
+        inferSource='k230';micActive=true;
+        document.getElementById('wavePlaceholder').style.display='none';
+        if(btn){btn.disabled=false;btn.textContent='Stop K230';}
+        drawWaveVis();restartInferTimer();startK230InferencePump();
+        setStatus('K230 live preview — collecting '+(CLIP_MS/1000).toFixed(1)+'s of audio...');
+    }catch(e){
+        console.error('K230 live preview error:',e);
+        await cleanupK230AudioSession(true);
+        inferSource=null;micActive=false;inferBuf=null;inferBufPos=0;
+        setPreviewStoppedUi('K230 live preview error: '+e.message);
+        alert('K230 Live Preview Failed:\n\n'+e.message);
+    }finally{
+        if(btn&&inferSource!=='k230'){btn.disabled=!trained;btn.textContent='K230 Mic';}
+    }
+}
+
+async function toggleEsp32Inference(){
+    if(!trained||!headModel){alert('Train first!');return;}
+    if(micActive&&inferSource==='esp32'){await stopInference();return;}
+    if(micActive)await stopInference();
+    if(activeMicIdx!==null)await stopMic();
+    const btn=document.getElementById('esp32InferBtn');
+    if(btn){btn.disabled=true;btn.textContent='Connecting...';}
+    try{
+        setStatus('Select the ESP32-S3 USB serial port for live preview...');
+        await ensureEsp32MicConnected();
+        inferBuf=new Float32Array(SR*5);inferBufPos=0;inferLastProcessedPos=-1;esp32SmoothedProbs=null;
+        const firstPcm=await esp32MicCapturePcm(512,12000);
+        esp32InferWaveform=firstPcm;
+        inferSource='esp32';micActive=true;
+        document.getElementById('wavePlaceholder').style.display='none';
+        if(btn){btn.disabled=false;btn.textContent='Stop ESP32-S3';}
+        drawWaveVis();restartInferTimer();startEsp32InferencePump();
+        setStatus('ESP32-S3 live preview — collecting '+(CLIP_MS/1000).toFixed(1)+'s of audio...');
+    }catch(e){
+        console.error('ESP32-S3 live preview error:',e);
+        await cleanupEsp32MicPort();
+        inferSource=null;micActive=false;inferBuf=null;inferBufPos=0;
+        setPreviewStoppedUi('ESP32-S3 live preview error: '+e.message);
+        alert('ESP32-S3 Live Preview Failed:\n\n'+e.message+'\n\nFlash the updated firmware and reset the board before its saved model auto-starts.');
+    }finally{
+        if(btn&&inferSource!=='esp32'){btn.disabled=!trained;btn.textContent='ESP32-S3 Mic';}
+    }
+}
+
+async function stopInference(){
+    clearInterval(inferTimer);if(visFrame){cancelAnimationFrame(visFrame);visFrame=null;}
+    if(inferSource==='k230'){
+        await stopK230InferencePump();
+        await cleanupK230AudioSession(true);
+    }
+    if(inferSource==='esp32'){
+        await stopEsp32InferencePump();
+        await cleanupEsp32AudioSession();
+    }
+    if(inferProc){try{inferProc.disconnect();}catch{}}
+    if(inferStream){inferStream.getTracks().forEach(t=>t.stop());inferStream=null;}
+    if(inferCtx){inferCtx.close().catch(()=>{});inferCtx=null;}
+    inferAnalyser=null;inferBuf=null;inferBufPos=0;inferLastProcessedPos=-1;inferProc=null;micActive=false;
+    inferSource=null;inferRunning=false;esp32SmoothedProbs=null;k230InferWaveform=new Float32Array(1024);esp32InferWaveform=new Float32Array(1024);
+    setPreviewStoppedUi('Live preview stopped.');
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────
+async function resetK230VoiceBoard(){
+    if(!SERIAL_SUPPORTED){alert('Reset K230 requires desktop Chrome or Edge with WebSerial.');return;}
+    if(isRecording){alert('Wait for recording to finish first.');return;}
+    if(connected||document.querySelector('#deployK230Btn .spinner')){
+        alert('K230 deployment is still running. Wait for the USB transfer to finish, then reset the board.');return;
+    }
+    const btn=document.getElementById('resetK230BoardBtn');
+    const original=btn?.innerHTML||'Reset K230 Board';
+    let resetPort=null,resetWriter=null;
+    try{
+        if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Resetting K230...';}
+        if(k230MicPort)lastK230VoicePort=k230MicPort;
+        if(micActive&&inferSource==='k230')await stopInference();
+        if(activeMicSource==='k230')await stopMic();
+        await cleanupK230MicPort();
+
+        resetPort=lastK230VoicePort;
+        if(!resetPort){
+            setStatus('Select the K230 USB serial port to reset the board.');
+            resetPort=await navigator.serial.requestPort();
+            lastK230VoicePort=resetPort;
+        }
+        setStatus('Sending reset command to K230...');
+        const baud=parseInt(document.getElementById('usbBaudSelect')?.value||'921600',10);
+        try{await resetPort.open({baudRate:baud,bufferSize:32768});}
+        catch(openError){
+            if(resetPort===lastK230VoicePort)lastK230VoicePort=null;
+            throw new Error('Could not open the K230 port. Reconnect the board and click Reset K230 again. '+openError.message);
+        }
+        resetWriter=resetPort.writable.getWriter();
+        await resetWriter.write(new Uint8Array([0x03,0x03,0x03]));
+        await sleep(350);
+        await resetWriter.write(new Uint8Array([0x01]));
+        await sleep(350);
+        await resetWriter.write(ENC.encode('import machine\r\nmachine.reset()'));
+        await resetWriter.write(new Uint8Array([0x04]));
+        await sleep(500);
+        setStatus('K230 reset command sent. Wait for the board to finish booting.');
+        alert('K230 reset command sent.\n\nWait about 5-10 seconds for the board to boot, then start the K230 microphone or test the model.');
+    }catch(e){
+        if(e.name==='NotFoundError')setStatus('K230 reset cancelled.');
+        else{
+            console.error('K230 reset error:',e);
+            setStatus('K230 reset failed: '+e.message);
+            alert('K230 Reset Failed:\n\n'+e.message+'\n\nMake sure no other application is using the COM port.');
+        }
+    }finally{
+        try{resetWriter&&resetWriter.releaseLock();}catch{}
+        try{resetPort&&await resetPort.close();}catch{}
+        if(btn){btn.disabled=false;btn.innerHTML=original;}
+    }
+}
+
+async function resetEsp32VoiceBoard(){
+    if(!SERIAL_SUPPORTED){alert('Reset ESP32-S3 requires desktop Chrome or Edge with WebSerial.');return;}
+    if(isRecording){alert('Wait for recording to finish first.');return;}
+    if(document.querySelector('#deployEsp32Btn .spinner')){
+        alert('ESP32-S3 deployment is still running. Wait for the serial transfer to finish, then reset the board.');return;
+    }
+    const btn=document.getElementById('resetEsp32BoardBtn');
+    const original=btn?.innerHTML||'Reset ESP32-S3 Board';
+    let resetPort=null,resetWriter=null,usingUploadConnection=false;
+    try{
+        if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Resetting ESP32-S3...';}
+        if(esp32MicPort)lastEsp32VoicePort=esp32MicPort;
+        if(micActive&&inferSource==='esp32')await stopInference();
+        if(activeMicSource==='esp32')await stopMic();
+        await cleanupEsp32MicPort();
+
+        if(_dfr1154.port&&_dfr1154.writer){
+            resetPort=_dfr1154.port;resetWriter=_dfr1154.writer;
+            lastEsp32VoicePort=resetPort;usingUploadConnection=true;
+        }else{
+            resetPort=lastEsp32VoicePort;
+            if(!resetPort){
+                setStatus('Select the ESP32-S3 USB serial port to reset the board.');
+                resetPort=await navigator.serial.requestPort();
+                lastEsp32VoicePort=resetPort;
+            }
+            try{await resetPort.open({baudRate:115200,bufferSize:8192});}
+            catch(openError){
+                if(resetPort===lastEsp32VoicePort)lastEsp32VoicePort=null;
+                throw new Error('Could not open the ESP32-S3 port. Reconnect the board and click reset again. '+openError.message);
+            }
+            resetWriter=resetPort.writable.getWriter();
+        }
+        setStatus('Sending RESET command to ESP32-S3...');
+        await resetWriter.write(ENC.encode('RESET\n'));
+        await sleep(500);
+        setStatus('ESP32-S3 reset command sent. Wait for the board to boot.');
+        alert('ESP32-S3 reset command sent.\n\nWait about 3-5 seconds for the DFR1154 to boot. This button requires the updated DFR1154 firmware.');
+    }catch(e){
+        if(e.name==='NotFoundError')setStatus('ESP32-S3 reset cancelled.');
+        else{
+            console.error('ESP32-S3 reset error:',e);
+            setStatus('ESP32-S3 reset failed: '+e.message);
+            alert('ESP32-S3 Reset Failed:\n\n'+e.message+'\n\nMake sure the updated DFR1154 firmware is installed and no other application is using the COM port.');
+        }
+    }finally{
+        if(usingUploadConnection){
+            await cleanupDfr1154Port();
+            dfr1154SetStatus('ESP32-S3 reset - serial connection closed.',false);
+        }else{
+            try{resetWriter&&resetWriter.releaseLock();}catch{}
+            try{resetPort&&await resetPort.close();}catch{}
+        }
+        if(btn){btn.disabled=false;btn.innerHTML=original;}
+    }
+}
+
+async function resetAll(){
+    if(!confirm('Reset everything? Clears all clips and the model.'))return;
+    if(isRecording){alert('Wait for recording to finish first.');return;}
+    await stopMic();await stopInference();await cleanupK230MicPort();await cleanupEsp32MicPort();await cleanupDfr1154Port();
+    trained=false;headModel=null;classNamesCopy=[];embeddings={};classAudio={};
+    classes=[{id:1,name:'Word1',color:'#4ade80'},{id:2,name:'Word2',color:'#60a5fa'}];
+    nextClassId=3;resetUsbPanel();updateButtons();
+    setStatus('Reset complete. Start fresh!');
+    setTrainState('<div class="state-ready"><div class="icon">🧠</div><h3>Ready to train.</h3><p>Add at least 5 clips per class<br>then press Train.</p></div>');
+    render();
+}
+
+// ── Deploy to Blockly ─────────────────────────────────────────────────────
+function deployToBlockly(){
+    if(!trained){alert('Train first!');return;}
+    const classNames=classes.map(c=>c.name);
+    const payload=JSON.stringify({type:'VOICE_MODEL_TRAINED',classes:classNames,clipMs:CLIP_MS});
+    // Also save for standalone browser reload
+    try{sessionStorage.setItem('curio_voice_trained',JSON.stringify(classNames));}catch(e){}
+    if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(payload);}
+    else if(window.parent!==window){window.parent.postMessage(payload,'*');window.opener?.postMessage(payload,'*');}
+    else{window.location.href='index.html';}
+    setStatus('Voice blocks deployed! Words: "'+classNames.join('", "')+'"');
+    ['deployHeaderBtn','deployCardBtn'].forEach(id=>{const btn=document.getElementById(id);if(!btn)return;const orig=btn.textContent;btn.textContent='Deployed!';btn.style.background='#4ade80';setTimeout(()=>{btn.textContent=orig;btn.style.background='';},2500);});
+}
+
+// ── Deploy to K230 ────────────────────────────────────────────────────────
+async function deployToK230(){
+    if(!trained||!headModel){alert('Train first!');return;}
+    if(isRecording){alert('Wait for recording to finish first.');return;}
+    const method=document.getElementById('deployMethodInput').value;
+    const btn=document.getElementById('deployK230Btn');const orig=btn.innerHTML;
+    let usbPort=null;
+    if(method==='usb'){
+        if(!SERIAL_SUPPORTED){alert('WebSerial requires Chrome/Edge v89+.');return;}
+        if(micActive&&inferSource==='k230')await stopInference();
+        if(activeMicSource==='k230')await stopMic();
+        await cleanupK230MicPort();
+        const baud=parseInt(document.getElementById('usbBaudSelect').value);
+        try{
+            const rememberedPort=lastK230VoicePort;
+            usbPort=rememberedPort||await navigator.serial.requestPort();
+            try{
+                await usbPort.open({baudRate:baud,bufferSize:32768});
+            }catch(openError){
+                // Reuse the K230 mic/live-preview port without another picker.
+                // Fall back to selection only after unplug/replug or re-enumeration.
+                if(!rememberedPort)throw openError;
+                try{await usbPort.close();}catch{}
+                lastK230VoicePort=null;usbPort=null;
+                setStatus('Remembered K230 port is unavailable. Select the board again...');
+                usbPort=await navigator.serial.requestPort();
+                await usbPort.open({baudRate:baud,bufferSize:32768});
+            }
+            lastK230VoicePort=usbPort;
+        }
+        catch(e){alert('Port error: '+e.message);try{usbPort&&await usbPort.close();}catch{}return;}
+    }
+    btn.disabled=true;btn.innerHTML='<span class="spinner"></span>...';setStatus('Compiling model...');
+    try{
+        // K230 inference supplies a [1, frames, bins, 1] spectrogram, so deploy
+        // the complete speech backbone + trained classifier. Saving headModel
+        // alone would produce a smaller model that expects a 2000-D embedding
+        // and is incompatible with voice_classification.py on the board.
+        const fullModel=buildFullVoiceModel();
+        let sa=null;
+        await fullModel.save(tf.io.withSaveHandler(async a=>{sa=a;return{modelArtifactsInfo:{dateSaved:new Date()}};}));
+        if(!sa)throw new Error('Failed to save model');
+        const mj={modelTopology:sa.modelTopology,weightsManifest:[{paths:['weights.bin'],weights:sa.weightSpecs}],format:'layers-model',generatedBy:'TensorFlow.js',convertedBy:null};
+        const fd=new FormData();
+        fd.append('model_json',new Blob([JSON.stringify(mj)],{type:'application/json'}),'model.json');
+        fd.append('weights_bin',new Blob([sa.weightData],{type:'application/octet-stream'}),'weights.bin');
+        fd.append('labels',JSON.stringify(classNamesCopy.length===classes.length?classNamesCopy:classes.map(c=>c.name)));
+        
+        btn.innerHTML='<span class="spinner"></span>Converting...';
+        setStatus('Deploying: sending model to backend for ONNX → .kmodel conversion (1–2 min)...');
+        console.log('[DEPLOY-K230] Backend URL:', getBackendUrl());
+        console.log('[DEPLOY-K230] Sending to:', getBackendUrl() + '/convert-voice');
+        
+        const resp = await postToBackend('convert-voice', fd);
+        const zip = await JSZip.loadAsync(await resp.blob());
+        const kf=zip.file('model.kmodel'),lf=zip.file('labels.txt');
+        if(!kf||!lf)throw new Error('Invalid zip from server');
+        const kBlob=await kf.async('blob'),lBlob=await lf.async('blob');
+        if(method==='wifi'){
+            const ip=document.getElementById('k230IpInput').value.trim()||'192.168.4.1';
+            const pt=document.getElementById('k230PortInput').value.trim()||'8080';
+            const url='http://'+ip+':'+pt+'/upload';setStatus('Pushing to K230 ('+ip+')...');
+            const r1=await fetch(url,{method:'POST',headers:{'X-Filename':'voice_v2_model.kmodel'},body:kBlob});if(!r1.ok)throw new Error('HTTP '+r1.status);
+            await sleep(1500);
+            const r2=await fetch(url,{method:'POST',headers:{'X-Filename':'voice_v2_labels.txt'},body:lBlob});if(!r2.ok)throw new Error('HTTP '+r2.status);
+            setStatus('Wi-Fi deployment complete!');alert('Deployed via Wi-Fi!\n\nFiles in /sdcard/kmodel/');
+        }else{
+            const baud=parseInt(document.getElementById('usbBaudSelect').value);
+            resetUsbPanel();showUsbPanel(true);
+            port=usbPort;portReader=usbPort.readable.getReader();portWriter=usbPort.writable.getWriter();connected=true;usbPort=null;
+            rxPump();usbLog('Port @ '+baud+' baud','ok');
+            try{
+                await enterRawREPL();
+                const kArr=new Uint8Array(await kBlob.arrayBuffer());const lArr=new Uint8Array(await lBlob.arrayBuffer());
+                await ensureDir('/sdcard/kmodel/');usbLog('Dir ready','ok');
+                await writeFileOnBoard('/sdcard/kmodel/voice_v2_model.kmodel',kArr,p=>{usbSetPct(1,p);setStatus('model: '+Math.round(p*100)+'%');});
+                usbSetPct(1,1);usbLog('model OK','ok');
+                await writeFileOnBoard('/sdcard/kmodel/voice_v2_labels.txt',lArr,p=>{usbSetPct(2,p);});
+                usbSetPct(2,1);usbLog('labels OK','ok');await exitRawREPL();usbLog('Done','ok');
+            }finally{await cleanupPort();}
+            setStatus('USB deployment complete!');alert('Deployed via USB!\nFiles in /sdcard/kmodel/');
+        }
+    }catch(e){
+        console.error(e);usbLog('Error: '+e.message,'err');alert('Deploy Failed: '+e.message);setStatus('Deploy failed: '+e.message);
+        if(connected)await cleanupPort();if(usbPort){try{await usbPort.close();}catch{}usbPort=null;}
+    }finally{btn.disabled=false;btn.innerHTML=orig;}
+}
+
+// ── Full voice model export helper ─────────────────────────────────────
+function buildFullVoiceModel(){
+    if(!backbone||!embedExtractor||!headModel){
+        throw new Error('Voice backbone, embed extractor, and trained head model are required');
+    }
+    const embeddingOutput = Array.isArray(embedExtractor.outputs)
+        ? embedExtractor.outputs[0]
+        : embedExtractor.outputs;
+    const fullOutput = headModel.apply(embeddingOutput);
+    return tf.model({inputs: backbone.inputs, outputs: fullOutput});
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+async function exportKmodel(){
+    if(!trained||!headModel){alert('Train first!');return;}
+    const btn=document.getElementById('exportBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Building...';setStatus('Exporting: building full model...');
+    try{
+        const fullModel = buildFullVoiceModel();
+        let sa=null;
+        await fullModel.save(tf.io.withSaveHandler(async a=>{sa=a;return{modelArtifactsInfo:{dateSaved:new Date()}};}));
+        // Note: Do not dispose fullModel since its layers are shared with headModel/backbone
+
+        const mj={modelTopology:sa.modelTopology,weightsManifest:[{paths:['weights.bin'],weights:sa.weightSpecs}],format:'layers-model',generatedBy:'TensorFlow.js',convertedBy:null};
+        const fd=new FormData();
+        fd.append('model_json',new Blob([JSON.stringify(mj)],{type:'application/json'}),'model.json');
+        fd.append('weights_bin',new Blob([sa.weightData],{type:'application/octet-stream'}),'weights.bin');
+        fd.append('labels',JSON.stringify(classNamesCopy.length===classes.length?classNamesCopy:classes.map(c=>c.name)));
+
+        btn.innerHTML='<span class="spinner"></span>Converting...';
+        setStatus('Exporting: sending to backend for ONNX → kmodel conversion (this may take 1–2 min)...');
+        console.log('[EXPORT] Sending to backend:', getBackendUrl() + '/convert-voice');
+        
+        const resp = await postToBackend('convert-voice', fd);
+        const zipBlob = await resp.blob();
+        const ct = resp.headers.get('content-type')||'';
+        
+        console.log('[EXPORT] Backend response received. Content-Type:', ct);
+        
+        if(ct.includes('application/json')){
+            const errJson = await JSON.parse(await zipBlob.text()).catch(()=>null);
+            throw new Error(errJson?.error || 'Backend returned error');
+        }
+
+        if(ct.includes('zip')){
+            console.log('[EXPORT] Unpacking zip from backend...');
+            const zip = await JSZip.loadAsync(zipBlob);
+            const kf = zip.file('model.kmodel');
+            const lf = zip.file('labels.txt');
+            if(!kf || !lf) throw new Error('Backend zip missing kmodel or labels');
+            
+            btn.innerHTML='<span class="spinner"></span>Downloading...';
+            setStatus('Exporting: downloading model.kmodel (converted at backend)...');
+            if(kf) downloadBlob(await kf.async('blob'),'voice_v2_model.kmodel');
+            await sleep(400);
+            if(lf) downloadBlob(await lf.async('blob'),'voice_v2_labels.txt');
+        } else {
+            throw new Error('Backend did not return ZIP: ' + ct);
+        }
+
+        setStatus('✅ Export complete: voice_v2_model.kmodel + voice_v2_labels.txt downloaded');
+        alert('✅ Files downloaded (converted by backend).\n\nCopy to /sdcard/kmodel/ on K230.');
+    }catch(e){
+        console.error('[EXPORT] Error:', e.message);
+        alert('❌ Export failed:\n\n' + e.message + '\n\nMake sure backend is running at:\n' + getBackendUrl());
+        setStatus('Export failed: ' + e.message);
+    }
+    finally{btn.disabled=false;btn.innerHTML='Export .kmodel (Local)';}
+}
+
+function _buildVoiceMicroCnn(nc) {
+    const m = tf.sequential();
+    m.add(tf.layers.conv2d({ inputShape: [43, 232, 1], filters: 8, kernelSize: [5, 5], strides: [2, 2], padding: 'same', activation: 'relu' }));
+    m.add(tf.layers.maxPooling2d({ poolSize: [2, 2] }));
+    m.add(tf.layers.conv2d({ filters: 12, kernelSize: [3, 3], strides: [2, 2], padding: 'same', activation: 'relu' }));
+    m.add(tf.layers.maxPooling2d({ poolSize: [2, 2] }));
+    m.add(tf.layers.flatten());
+    m.add(tf.layers.dense({ units: 24, activation: 'relu' }));
+    m.add(tf.layers.dense({ units: nc, activation: 'softmax' }));
+    return m;
+}
+
+async function exportVoiceTflite() {
+    await exportVoiceTfliteCore(false);
+}
+
+async function deployVoiceToEsp32() {
+    await exportVoiceTfliteCore(true);
+}
+
+// Deploy the EXACT model the preview runs (speech-commands backbone + trained
+// head) as full-INT8 TFLite. On-device accuracy then matches the browser
+// preview — the same architecture the K230 path deploys as a float kmodel.
+async function deployVoiceFullToEsp32() {
+    await exportVoiceTfliteCore(true, true);
+}
+
+async function exportVoiceTfliteCore(isSerialUpload, useFullModel = false) {
+    if (classes.length < 2) { alert('Need at least 2 classes!'); return; }
+    if (isRecording) { alert('Wait for recording to finish first.'); return; }
+    if (useFullModel && (!trained || !headModel)) { alert('Train first! The preview model must be trained before it can be deployed.'); return; }
+    if (isSerialUpload) {
+        if (micActive && inferSource === 'esp32') await stopInference();
+        if (activeMicSource === 'esp32') await stopMic();
+        await cleanupEsp32MicPort();
+    }
+    const emptyClass = classes.find(c => (classAudio[c.name] || []).length < 3);
+    if (emptyClass) { alert(`"${emptyClass.name}" needs at least 3 clips.`); return; }
+
+    const btnId = useFullModel ? 'deployEsp32FullBtn' : (isSerialUpload ? 'deployEsp32Btn' : 'exportEsp32Btn');
+    const btnRestore = useFullModel ? '🚀 Deploy Preview Model (ESP32)'
+        : (isSerialUpload ? '🔌 Deploy to ESP32 (WebSerial)' : 'Export .tflite (ESP32-S3)');
+    const btn = document.getElementById(btnId);
+    btn.disabled = true;
+
+    // The tiny-CNN path trains server-side on the clips and requires exactly
+    // 1 s clips. The full-model path only uses clips for INT8 calibration and
+    // the server truncates/pads them to 1 s, so any clip length is fine.
+    if (!useFullModel && CLIP_MS !== 1000) {
+        alert('Voice model export requires exactly 1.0 second clip length. Please set Clip Length to 1.0s, re-record/upload your clips, train, and then export.');
+        btn.disabled = false;
+        btn.innerHTML = btnRestore;
+        return;
+    }
+
+    let _serialReady = false;
+    btn.innerHTML = '<span class="spinner"></span>Preparing spectrograms...';
+
+    try {
+        const nc = classes.length;
+        // Full-model path: labels MUST be in train-time order (classNamesCopy)
+        // because the deployed model's output positions are fixed at training.
+        // Tiny path: the server trains a fresh model in the order of these
+        // labels, so current class order is correct there.
+        const labels = (useFullModel && classNamesCopy.length === classes.length)
+            ? classNamesCopy.slice()
+            : classes.map(c => c.name);
+
+        function encodeWAV(samples, sampleRate) {
+            const buffer = new ArrayBuffer(44 + samples.length * 2);
+            const view = new DataView(buffer);
+            function writeString(view, offset, string) {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            }
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + samples.length * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, samples.length * 2, true);
+            let offset = 44;
+            for (let i = 0; i < samples.length; i++, offset += 2) {
+                let s = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        const zip = new JSZip();
+        // Cap clips per class: the free Cloudflare tunnel aborts requests
+        // after ~100 s, and very large datasets (200 clips ≈ 6.4 MB/class)
+        // blow that limit on upload alone. 100 clips/class is plenty — the
+        // backend additionally augments every clip 4×. The full-model path
+        // only uses clips as the INT8 calibration set (server caps at 128
+        // total), so 30/class keeps the upload small next to the ~8 MB of
+        // model weights it also carries.
+        const MAX_CLIPS_PER_CLASS = useFullModel ? 30 : 100;
+        for (const cls of classes) {
+            const classFolder = zip.folder(cls.name);
+            let clips = classAudio[cls.name] || [];
+            if (clips.length > MAX_CLIPS_PER_CLASS) {
+                clips = clips.slice().sort(() => 0.5 - Math.random()).slice(0, MAX_CLIPS_PER_CLASS);
+            }
+            for (let i = 0; i < clips.length; i++) {
+                const wavBlob = encodeWAV(clips[i], 16000);
+                classFolder.file(`clip_${i}.wav`, wavBlob);
+            }
+        }
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+        const formData = new FormData();
+        formData.append('dataset_zip', zipBlob, 'dataset.zip');
+        formData.append('labels', JSON.stringify(labels));
+
+        let endpoint = 'convert-tiny';
+        if (useFullModel) {
+            // Ship the exact preview model (backbone + head), like deployToK230.
+            btn.innerHTML = '<span class="spinner"></span>Packing full model...';
+            const fullModel = buildFullVoiceModel();
+            let sa = null;
+            await fullModel.save(tf.io.withSaveHandler(async a => { sa = a; return { modelArtifactsInfo: { dateSaved: new Date() } }; }));
+            if (!sa) throw new Error('Failed to save model');
+            const mj = { modelTopology: sa.modelTopology, weightsManifest: [{ paths: ['weights.bin'], weights: sa.weightSpecs }], format: 'layers-model', generatedBy: 'TensorFlow.js', convertedBy: null };
+            formData.append('model_json', new Blob([JSON.stringify(mj)], { type: 'application/json' }), 'model.json');
+            formData.append('weights_bin', new Blob([sa.weightData], { type: 'application/octet-stream' }), 'weights.bin');
+            endpoint = 'convert-voice-esp32-full';
+            btn.innerHTML = '<span class="spinner"></span>Converting on Server (~1m)...';
+            setStatus('Backend: converting preview model (backbone + head) to INT8 TFLite (~1 min)...');
+        } else {
+            formData.append('epochs', "60");
+            btn.innerHTML = '<span class="spinner"></span>Training on Server (~1-2m)...';
+            setStatus('Backend: training server-side model and exporting INT8 TFLite (~1-2 min)...');
+        }
+
+        const resp = await postToBackend(endpoint, formData);
+
+        // ── Step 5: unpack .tflite from backend response ─────────────────
+        btn.innerHTML = '<span class="spinner"></span>Generating files...';
+        const respBlob = await resp.blob();
+        
+        if (!isSerialUpload) {
+            // User requested to download the ZIP file directly
+            downloadBlob(respBlob, 'tiny_voice_esp32_model.zip');
+            setStatus(`✅ Export complete: tiny_voice_esp32_model.zip downloaded.`);
+            alert(`✅ ZIP file downloaded successfully.`);
+            return;
+        }
+
+        let tfliteBytes = null;
+        let settingsText = null;
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('zip') || respBlob.type.includes('zip')) {
+            const rz = await JSZip.loadAsync(respBlob);
+            let tf_ = rz.file('model.tflite') || rz.file('tiny_voice_esp32_model/soundclassifier_int8.tflite') || rz.file('tiny_voice_esp32_model/model.tflite');
+            if (!tf_) {
+                const files = Object.keys(rz.files);
+                const match = files.find(f => f.endsWith('model.tflite') || f.endsWith('.tflite'));
+                if (match) tf_ = rz.file(match);
+            }
+            if (!tf_) throw new Error('model.tflite not found in backend response');
+            tfliteBytes = await tf_.async('uint8array');
+            const settingsMatch = Object.keys(rz.files).find(f => f.endsWith('model_settings.json'));
+            if (settingsMatch) settingsText = await rz.file(settingsMatch).async('string');
+        } else {
+            tfliteBytes = new Uint8Array(await respBlob.arrayBuffer());
+        }
+        // The settings file tells the firmware to use the normalized-log
+        // Hann-1024 feature mode this model was trained on. Without it on the
+        // board, the firmware falls back to a different feature pipeline and
+        // the model misdetects. Synthesize a minimal one if the zip lacked it.
+        if (!settingsText) {
+            settingsText = JSON.stringify({
+                export_type: 'tiny_esp32_voice_norm_log',
+                feature_mode: 'tm_speech_commands_norm_log',
+                sample_rate: 16000, frames: 43, bins: 232, fft_window: 1024,
+                classes: labels,
+            });
+        }
+
+        const sizeKb = (tfliteBytes.length / 1024).toFixed(1);
+
+
+        // ── Auto-upload via WebSerial if port was pre-connected ──────
+        _dfr1154.labelsText = labels.map((l, i) => i + ' ' + l).join('\n') + '\n';
+
+        if (isSerialUpload) {
+            const modal = document.getElementById('rstModal');
+            const modalBtn = document.getElementById('rstModalBtn');
+            const cancelBtn = document.getElementById('rstCancelBtn');
+            
+            // Customize modal paragraph for Voice
+            const pText = modal.querySelector('p');
+            if (pText) {
+                pText.innerHTML = `Your ${sizeKb} KB voice model is trained and ready! To prevent the board from starting its old model and locking the connection, please follow these steps:
+                <br><br>
+                1. <strong>Press and release</strong> the physical <strong>RST (Reset)</strong> button on your board now.
+                <br>
+                2. Click <strong>Connect & Upload</strong> below immediately!`;
+            }
+
+            modal.style.display = 'flex';
+
+            await new Promise((resolve, reject) => {
+                modalBtn.onclick = async () => {
+                    try {
+                        btn.innerHTML = '<span class="spinner"></span>Connecting to port…';
+                        await cleanupDfr1154Port();
+                        const rememberedPort = lastEsp32VoicePort;
+                        _dfr1154.port = rememberedPort || await navigator.serial.requestPort();
+                        try {
+                            await _dfr1154.port.open({ baudRate: 115200, bufferSize: 8192 });
+                        } catch (openError) {
+                            // The live-preview port is normally reusable without
+                            // another picker. If it became stale after unplugging
+                            // or re-enumeration, let the user select the port once.
+                            if (!rememberedPort) throw openError;
+                            try { await _dfr1154.port.close(); } catch (_) {}
+                            lastEsp32VoicePort = null;
+                            _dfr1154.port = null;
+                            setStatus('Remembered ESP32-S3 port is unavailable. Select the board again...');
+                            _dfr1154.port = await navigator.serial.requestPort();
+                            await _dfr1154.port.open({ baudRate: 115200, bufferSize: 8192 });
+                        }
+                        lastEsp32VoicePort = _dfr1154.port;
+                        try { await _dfr1154.port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (_) {}
+                        _dfr1154.reader = _dfr1154.port.readable.getReader();
+                        _dfr1154.writer = _dfr1154.port.writable.getWriter();
+                        _serialReady    = true;
+                        document.getElementById('serialPanel').classList.add('active');
+                        dfr1154SetStatus('Serial connected — uploading…', true);
+                        dfr1154Log('Port opened. Uploading model...');
+                        modal.style.display = 'none';
+                        resolve();
+                    } catch (e) {
+                        modal.style.display = 'none';
+                        reject(e);
+                    }
+                };
+                cancelBtn.onclick = () => {
+                    modal.style.display = 'none';
+                    reject(new Error('Upload cancelled by user.'));
+                };
+            });
+        }
+
+        if (_serialReady) {
+            btn.innerHTML = '<span class="spinner"></span>Waiting for DFR1154 firmware…';
+            dfr1154SetStatus('Handshaking with DFR1154 firmware…', true);
+            dfr1154Log('Starting DFR1154 upload protocol…');
+            await dfr1154WaitReady();
+
+            btn.innerHTML = '<span class="spinner"></span>Uploading labels…';
+            const labelBytes = new TextEncoder().encode(_dfr1154.labelsText);
+            dfr1154Log('→ LABELS ' + labelBytes.length);
+            await dfr1154Write('LABELS ' + labelBytes.length + '\n');
+            await _dfr1154.writer.write(labelBytes);
+            await dfr1154Expect(l => l.includes('SERIAL OK LABELS') || l.includes('Serial labels uploaded'), 10000);
+            dfr1154Log('Labels sent ✓');
+
+            // Feature-mode settings — required for correct voice detection.
+            // Older firmware has no SETTINGS command, and blindly sending the
+            // JSON payload would be parsed as garbage commands and break the
+            // MODEL upload that follows. Probe first with a zero-size
+            // SETTINGS: new firmware answers "Bad settings size", old
+            // firmware answers "Unknown command" — neither leaves stray
+            // bytes in the stream.
+            let settingsSupported = false;
+            try {
+                dfr1154Log('→ SETTINGS support probe');
+                await dfr1154Write('SETTINGS 0\n');
+                for (let i = 0; i < 8; i++) {
+                    const line = await dfr1154ReadLine(4000);
+                    if (line.includes('Bad settings size')) { settingsSupported = true; break; }
+                    if (line.includes('Unknown command')) break;
+                }
+            } catch (_) { /* timeout — treat as unsupported */ }
+            if (settingsSupported) {
+                const settingsBytes = new TextEncoder().encode(settingsText);
+                dfr1154Log('→ SETTINGS ' + settingsBytes.length);
+                await dfr1154Write('SETTINGS ' + settingsBytes.length + '\n');
+                await _dfr1154.writer.write(settingsBytes);
+                await dfr1154Expect(l => l.includes('SERIAL OK SETTINGS'), 10000);
+                dfr1154Log('Feature-mode settings sent ✓');
+            } else {
+                dfr1154Log('⚠ Board firmware has no SETTINGS command — voice model may run with the wrong feature mode. Flash the latest DFR1154 firmware!', 'warn');
+            }
+
+            await dfr1154SendCommand('MODEL_BEGIN ' + tfliteBytes.length, 'MODEL_BEGIN', 15000);
+            const chunkSize = 2048;
+            for (let offset = 0; offset < tfliteBytes.length; offset += chunkSize) {
+                const chunk = tfliteBytes.slice(offset, Math.min(offset + chunkSize, tfliteBytes.length));
+                const pct   = Math.round(((offset + chunk.length) / tfliteBytes.length) * 100);
+                btn.innerHTML = `<span class="spinner"></span>Uploading to DFR1154… ${pct}%`;
+                dfr1154Log('→ MODEL_CHUNK ' + offset + ' ' + chunk.length);
+                await dfr1154Write('MODEL_CHUNK ' + offset + ' ' + chunk.length + '\n');
+                await _dfr1154.writer.write(chunk);
+                await dfr1154Expect(l => l.includes('SERIAL OK MODEL_CHUNK'), 15000);
+            }
+            await dfr1154SendCommand('MODEL_END ' + tfliteBytes.length, 'MODEL_END', 15000);
+            await dfr1154SendCommand('LOAD', 'LOAD', 10000);
+
+            const kb = (tfliteBytes.length / 1024).toFixed(1);
+            dfr1154Log(`✅ Model loaded (${kb} KB)! Inference running on DFR1154.`);
+            dfr1154SetStatus(`✅ Loaded ${kb} KB — inference running on board.`, true);
+            setStatus(`DFR1154 model loaded (${kb} KB).`);
+        } else {
+            if (isSerialUpload) {
+                alert(
+                    `🔌 WebSerial connection was not established or was cancelled.\n\n` +
+                    `No files were sent to the board and no TFLite files were downloaded.\n\n` +
+                    `If you want to manually download the TFLite model, click the "Export .tflite (ESP32-S3)" button instead.`
+                );
+            }
+        }
+
+    } catch (e) {
+        console.error('ESP32 deployment error:', e);
+        if (isSerialUpload) {
+            if (e.message.includes('Inference already started') || e.message.includes('reset board')) {
+                alert(
+                    `⚠️ ESP32 Upload Locked!\n\n` +
+                    `The board has already started running its previous model, which locks the upload channel.\n\n` +
+                    `👉 How to solve this:\n` +
+                    `1. Press the physical "RST" (Reset) button on your DFR1154 board.\n` +
+                    `2. Immediately click the yellow "Deploy to ESP32 (WebSerial)" button in your browser within 5 seconds!\n\n` +
+                    `This will catch the board during its initial startup handshake before it starts running the old model.`
+                );
+            } else {
+                alert('🔌 ESP32 Serial Upload Failed:\n\n' + e.message + '\n\nTip: Close other applications (like Arduino IDE Serial Monitor) that might be using the COM port, reset the board, and try again.');
+            }
+            setStatus('ESP32 WebSerial upload failed: ' + e.message);
+        } else {
+            alert('TFLite Export Failed: ' + e.message);
+            setStatus('TFLite export failed: ' + e.message);
+        }
+    } finally {
+        if (isSerialUpload) {
+            await cleanupDfr1154Port();
+            dfr1154SetStatus('ESP32-S3 upload port released.', false);
+        }
+        btn.disabled = false;
+        btn.innerHTML = btnRestore;
+    }
+}
+
+// ══════════════════════════════════════════════════════════════
+// DFR1154 WebSerial Upload
+// Protocol: PING → LABELS → MODEL_BEGIN → MODEL_CHUNKs → MODEL_END → LOAD
+// ══════════════════════════════════════════════════════════════
+
+const _dfr1154 = {
+    bytes: null,       // Uint8Array — last exported TFLite model
+    labelsText: '',    // "0 Class1\n1 Class2\n"
+    port: null,
+    reader: null,
+    writer: null,
+    rxBuf: '',
+};
+
+async function cleanupDfr1154Port() {
+    const devicePort=_dfr1154.port,reader=_dfr1154.reader,writer=_dfr1154.writer;
+    if(devicePort)lastEsp32VoicePort=devicePort;
+    _dfr1154.port=_dfr1154.reader=_dfr1154.writer=null;
+    _dfr1154.rxBuf='';
+    try{reader&&await reader.cancel();}catch{}
+    try{reader&&reader.releaseLock();}catch{}
+    try{writer&&await writer.close();}catch{}
+    try{writer&&writer.releaseLock();}catch{}
+    try{devicePort&&await devicePort.close();}catch{}
+}
+
+function dfr1154SetStatus(msg, connected) {
+    const dot = document.getElementById('serialDot');
+    const st  = document.getElementById('serialStatusMsg');
+    if (dot) dot.className = 'serial-dot' + (connected ? ' connected' : '');
+    if (st)  st.textContent = msg;
+}
+
+function dfr1154Log(s) {
+    const box = document.getElementById('serialLog');
+    if (!box) return;
+    box.classList.add('active');
+    box.textContent = '[' + new Date().toLocaleTimeString() + '] ' + s + '\n' + box.textContent;
+}
+
+async function dfr1154ReadLine(timeoutMs = 10000) {
+    const deadline = Date.now() + timeoutMs;
+    const dec = new TextDecoder();
+    while (true) {
+        const nl = _dfr1154.rxBuf.indexOf('\n');
+        if (nl >= 0) {
+            const line = _dfr1154.rxBuf.slice(0, nl).replace(/\r/g, '');
+            _dfr1154.rxBuf = _dfr1154.rxBuf.slice(nl + 1);
+            if (line) dfr1154Log('← ' + line);
+            return line;
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error('Serial timeout');
+        const result = await Promise.race([
+            _dfr1154.reader.read(),
+            new Promise(r => setTimeout(() => r({ timeout: true }), remaining))
+        ]);
+        if (result.timeout)     throw new Error('Serial timeout');
+        if (result.done)        throw new Error('Serial disconnected');
+        _dfr1154.rxBuf += dec.decode(result.value, { stream: true });
+    }
+}
+
+async function dfr1154Expect(matchFn, timeoutMs = 10000) {
+    while (true) {
+        const line = await dfr1154ReadLine(timeoutMs);
+        if (line.startsWith('SERIAL ERR')) throw new Error(line);
+        if (matchFn(line)) return line;
+    }
+}
+
+async function dfr1154Write(text) {
+    await _dfr1154.writer.write(new TextEncoder().encode(text));
+}
+
+async function dfr1154SendCommand(cmd, okToken, timeoutMs = 10000) {
+    dfr1154Log('→ ' + cmd);
+    await dfr1154Write(cmd + '\n');
+    return dfr1154Expect(l => l.includes('SERIAL OK ' + okToken), timeoutMs);
+}
+
+async function dfr1154WaitReady() {
+    const deadline = Date.now() + 12000;
+    while (Date.now() < deadline) {
+        await dfr1154Write('PING\n');
+        try {
+            const line = await dfr1154Expect(
+                l => l.includes('SERIAL OK PONG') || l.includes('SERIAL READY'),
+                1200
+            );
+            if (line.includes('SERIAL READY')) {
+                await dfr1154SendCommand('PING', 'PONG', 3000);
+            }
+            return;
+        } catch (e) {
+            if (!e.message.includes('timeout')) throw e;
+            await new Promise(r => setTimeout(r, 500));
+        }
+    }
+    throw new Error('No firmware response. Flash DFR1154 firmware, reset board, then retry.');
+}
+
+// ── Go Back ───────────────────────────────────────────────────────────────
+async function goBack(){
+    if(isRecording){alert('Wait for recording to finish first.');return;}
+    await stopMic();await stopInference();
+    await cleanupK230MicPort();await cleanupEsp32MicPort();await cleanupDfr1154Port();
+    const payload=JSON.stringify({type:'CLOSE_VOICE_TRAIN_V2'});
+    if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(payload);}
+    else if(window.parent!==window){window.parent.postMessage(payload,'*');window.opener?.postMessage(payload,'*');}
+    else{window.location.href='train_picker.html';}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
+    if (tf.wasm && tf.wasm.setWasmPaths) {
+        tf.wasm.setWasmPaths('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.10.0/dist/');
+    }
+    (async () => {
+        try {
+            await tf.setBackend('webgl');
+            console.log('WebGL backend initialized');
+        } catch (_) {
+            try {
+                await tf.setBackend('wasm');
+                console.log('WASM backend initialized');
+            } catch (err) {
+                console.warn('WebGL/WASM backends failed to load, falling back to CPU:', err);
+            }
+        }
+    })();
+    classes.forEach(c=>{embeddings[c.name]=[];classAudio[c.name]=[];});
+    setClipLen(1500);
+    render();
+    loadBackbone();
+});
+</script>
+
+    <!-- Beautiful modern popup modal for ESP32 RST guidance -->
+    <div id="rstModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.7); backdrop-filter:blur(4px); z-index:99999; justify-content:center; align-items:center; transition: opacity 0.3s ease;">
+        <div style="background:#ffffff; border-radius:20px; max-width:440px; width:90%; padding:30px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); border:1px solid #f1f5f9; text-align:center;">
+            <div style="background:#fef9c3; border-radius:50%; width:60px; height:60px; display:flex; align-items:center; justify-content:center; margin:0 auto 20px;">
+                <span style="font-size:28px;">🔌</span>
+            </div>
+            <h3 style="margin-bottom:12px; color:#0f172a; font-size:20px; font-weight:800; font-family:system-ui, -apple-system, sans-serif;">Prepare ESP32 Board</h3>
+            <p style="font-size:14px; color:#475569; margin-bottom:24px; line-height:1.6; font-family:system-ui, -apple-system, sans-serif; text-align:left;">
+                Your voice model is trained and ready! To prevent the board from starting its old model and locking the connection, please follow these steps:
+                <br><br>
+                1. <strong>Press and release</strong> the physical <strong>RST (Reset)</strong> button on your board now.
+                <br>
+                2. Click <strong>Connect & Upload</strong> below immediately!
+            </p>
+            <div style="display:flex; gap:12px;">
+                <button id="rstCancelBtn" style="flex:1; background:#f1f5f9; color:#475569; border:none; padding:12px; border-radius:10px; font-weight:700; cursor:pointer; font-size:14px; transition: background 0.2s;">
+                    Cancel
+                </button>
+                <button id="rstModalBtn" style="flex:2; background:#eab308; color:#fff; border:none; padding:12px; border-radius:10px; font-weight:700; cursor:pointer; font-size:14px; transition: background 0.2s; box-shadow:0 4px 6px -1px rgba(234,179,8,0.3);">
+                    Connect & Upload
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

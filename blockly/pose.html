@@ -1,0 +1,2663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Pose Model Training — K230</title>
+
+    <!-- TF.js core -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <!-- MoveNet via pose-detection API (replaces PoseNet) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.10.0/dist/tf-backend-webgl.min.js"></script>
+    <!-- JSZip for export/deploy -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f8fafc;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            background: #fff; padding: 12px 20px;
+            border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06);
+            flex-shrink: 0;
+        }
+        .back-btn { padding: 8px 14px; background: #f1f5f9; border: none;
+            border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #475569; }
+        .back-btn:hover { background: #e2e8f0; }
+        .header h1 { font-size: 18px; font-weight: 700; color: #1e293b; }
+        .header-badge { font-size: 11px; font-weight: 700;
+            background: linear-gradient(135deg, #0ea5e9, #10b981);
+            color: #fff; padding: 3px 10px; border-radius: 10px; margin-left: 8px; }
+        .deploy-btn { padding: 8px 16px; background: #f54254; color: #fff; border: none;
+            border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 700; transition: opacity .2s; }
+        .deploy-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .deploy-btn:not(:disabled):hover { opacity: .85; }
+        .reset-btn { padding: 8px 14px; background: #fef3c7; border: 1.5px solid #fcd34d;
+            border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+            color: #92400e; transition: background .15s; }
+        .reset-btn:hover { background: #fde68a; }
+
+        /* ── Status bar ── */
+        .status-bar { background: #f1f5f9; padding: 6px 20px; font-size: 13px;
+            color: #475569; min-height: 30px; flex-shrink: 0; }
+
+        /* ── Layout ── */
+        .columns { display: flex; flex-direction: row; gap: 16px; padding: 16px;
+            overflow-x: auto; overflow-y: auto; flex: 1; align-items: flex-start; }
+        .col { width: 420px; flex-shrink: 0; }
+        .col-title { font-size: 15px; font-weight: 700; color: #374151; margin-bottom: 12px; }
+        .arrow { display: flex; align-items: flex-start; padding-top: 180px;
+            font-size: 28px; color: #cbd5e1; flex-shrink: 0; }
+
+        /* ── Model load indicator ── */
+        .model-load-bar {
+            background: #fff; border-radius: 12px; padding: 12px 14px;
+            margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+            border-left: 4px solid #0ea5e9;
+        }
+        .model-load-title { font-size: 13px; font-weight: 700; color: #374151;
+            margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+        .model-load-status { font-size: 11px; color: #94a3b8; line-height: 1.5; }
+        .model-load-track { width: 100%; height: 3px; background: #f1f5f9;
+            border-radius: 2px; margin-top: 8px; overflow: hidden; }
+        .model-load-fill { height: 100%; background: #0ea5e9;
+            border-radius: 2px; transition: width .3s ease; width: 0%; }
+
+        /* ── Class cards ── */
+        .class-card {
+            background: #fff; border-radius: 12px;
+            margin-bottom: 16px; box-shadow: 0 1px 6px rgba(0,0,0,.08);
+            border: 1px solid #e2e8f0; overflow: hidden;
+        }
+
+        /* Header row: name | count badge | × | ↑ */
+        .class-header {
+            display: flex; align-items: center; gap: 8px;
+            padding: 12px 14px 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .class-name {
+            flex: 1; font-size: 16px; font-weight: 800; border: none;
+            outline: none; background: transparent; padding-bottom: 0;
+        }
+        .sample-count-badge {
+            font-size: 12px; font-weight: 600; color: #64748b;
+            white-space: nowrap;
+        }
+        .remove-btn { background: none; border: none; color: #94a3b8;
+            cursor: pointer; font-size: 18px; padding: 2px 4px; line-height: 1; }
+        .remove-btn:hover { color: #ef4444; }
+
+        /* Card body — vertical stack */
+        .card-body {
+            display: flex; flex-direction: column; gap: 0;
+        }
+
+        /* Camera section — full width, tall */
+        .cam-panel {
+            width: 100%; background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex; flex-direction: column;
+            padding: 10px; gap: 8px;
+        }
+        .cam-panel-label {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 12px; font-weight: 700; color: #1a73e8;
+        }
+        .cam-panel-label .close-cam {
+            background: none; border: none; cursor: pointer;
+            color: #5f6368; font-size: 16px; line-height: 1; padding: 0;
+        }
+        .cam-panel-label .close-cam:hover { color: #ef4444; }
+
+        /* Camera canvas box — full width, tall */
+        .cam-canvas-box {
+            position: relative; background: #1a1a2e;
+            border-radius: 8px; overflow: hidden;
+            width: 100%; height: 260px;
+        }
+        .cam-canvas-box canvas {
+            width: 100%; height: 100%; display: block; object-fit: cover;
+        }
+
+        /* Dashed crop-area overlay */
+        .cam-canvas-box::after {
+            content: '';
+            position: absolute;
+            inset: 16px;
+            border: 2px dashed rgba(255,255,255,0.45);
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
+        .cam-canvas-placeholder {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: #64748b; font-size: 12px; gap: 8px;
+            text-align: center; padding: 12px;
+        }
+        .cam-canvas-placeholder .ph-icon { font-size: 36px; }
+
+        /* Crop label below camera */
+        .cam-crop-label {
+            font-size: 11px; color: #94a3b8; text-align: center;
+            display: flex; align-items: center; justify-content: center; gap: 4px;
+        }
+
+        /* Buttons row: Hold to Record | Stop */
+        .cam-btn-row {
+            display: flex; gap: 8px;
+        }
+
+        /* Hold to Record button */
+        .hold-btn {
+            flex: 1; padding: 11px 0; border: none; border-radius: 8px;
+            color: #fff; font-weight: 800; cursor: pointer; font-size: 14px;
+            user-select: none; -webkit-user-select: none;
+            transition: opacity .15s;
+        }
+        .hold-btn:disabled { opacity: .35; cursor: not-allowed; }
+        .hold-btn:not(:disabled):active { opacity: .8; }
+
+        /* Stop button */
+        .stop-cam-btn {
+            padding: 11px 18px; border: none; border-radius: 8px;
+            background: #475569; color: #fff;
+            font-size: 14px; font-weight: 700; cursor: pointer;
+            transition: opacity .15s; flex-shrink: 0;
+        }
+        .stop-cam-btn:hover { opacity: .85; }
+
+        /* Open webcam / ESP32 buttons row (idle state) */
+        .open-cam-row { display: flex; gap: 8px; }
+        .open-cam-btn {
+            flex: 1; padding: 11px 0; border-radius: 8px; border: none;
+            background: #1a73e8; color: #fff;
+            font-size: 14px; font-weight: 700; cursor: pointer;
+            transition: opacity .15s;
+        }
+        .open-cam-btn:hover { opacity: .88; }
+        .open-cam-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+        .esp32-cam-btn {
+            flex: 1; padding: 11px 0; border-radius: 8px; border: none;
+            background: #f59e0b; color: #fff;
+            font-size: 14px; font-weight: 700; cursor: pointer;
+            transition: opacity .15s;
+        }
+        .esp32-cam-btn:hover { opacity: .88; }
+        .esp32-cam-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+        .esp32-view-note {
+            font-size: 11px; color: #92400e; background: #fef3c7;
+            border-radius: 6px; padding: 6px 8px; text-align: center;
+        }
+
+        /* Samples section — below camera */
+        .samples-panel {
+            padding: 10px 12px 12px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .samples-header {
+            font-size: 12px; font-weight: 600; color: #374151;
+        }
+
+        /* Thumbnail grid — 5 columns */
+        .samples-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+            align-content: start;
+        }
+        .thumb-wrap { position: relative; aspect-ratio: 1; }
+        .thumb-wrap canvas {
+            width: 100%; height: 100%; border-radius: 6px;
+            background: #0f172a; display: block; object-fit: cover;
+        }
+        /* Delete badge always visible (red circle top-left) */
+        .thumb-del {
+            position: absolute; top: -4px; left: -4px;
+            width: 16px; height: 16px; background: #ef4444; color: #fff;
+            border: none; border-radius: 50%; cursor: pointer; font-size: 9px;
+            font-weight: 700; display: flex; align-items: center; justify-content: center;
+            opacity: 1;
+        }
+        .thumb-del:hover { background: #b91c1c; }
+
+        /* No-samples placeholder */
+        .no-samples-hint {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: #94a3b8; font-size: 11px; text-align: center;
+            gap: 4px; padding: 16px 0;
+        }
+
+        .tips-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px;
+            padding: 10px 14px; margin-top: 12px; font-size: 12px; color: #166534; line-height: 1.7; }
+        .warn-box { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px;
+            padding: 10px 14px; margin-top: 8px; font-size: 12px; color: #1e40af; line-height: 1.7; }
+
+        .extractor-box { margin: 12px 0; padding: 12px; border: 1px solid #bae6fd;
+            border-radius: 9px; background: #f0f9ff; }
+        .extractor-row { display:flex; align-items:center; gap:8px; }
+        .extractor-row label { font-size:12px; font-weight:800; color:#0c4a6e; white-space:nowrap; }
+        .extractor-select { flex:1; min-width:0; border:1px solid #7dd3fc; border-radius:6px;
+            padding:7px 8px; background:#fff; color:#0c4a6e; font-size:12px; font-weight:700; }
+        .extractor-help { margin-top:7px; color:#64748b; font-size:10px; line-height:1.45; }
+        .k230-pose-note { padding:7px 9px; background:#fffbeb; border:1px solid #fde68a;
+            border-radius:6px; color:#92400e; font-size:10px; line-height:1.4; }
+
+        .add-class-btn { border: 2px dashed #e2e8f0; border-radius: 10px; padding: 14px;
+            text-align: center; color: #94a3b8; cursor: pointer; font-weight: 600;
+            font-size: 14px; background: none; width: 100%; margin-top: 4px;
+            transition: border-color .15s; }
+        .add-class-btn:hover { border-color: #94a3b8; }
+        .add-class-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+        /* ── Train card ── */
+        .train-card { background: #fff; border-radius: 12px; padding: 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+        .state-ready { text-align: center; padding: 20px 0; }
+        .state-ready .icon { font-size: 36px; margin-bottom: 8px; }
+        .state-ready h3 { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+        .state-ready p { font-size: 12px; color: #94a3b8; }
+        .state-progress { text-align: center; padding: 20px 0; }
+        .progress-pct { font-size: 32px; font-weight: 800; color: #0ea5e9; margin-bottom: 8px; }
+        .progress-bar { width: 100%; height: 6px; background: #f1f5f9; border-radius: 3px;
+            overflow: hidden; margin-bottom: 8px; }
+        .progress-fill { height: 100%; background: #0ea5e9; border-radius: 3px;
+            transition: width .2s ease; }
+        .progress-label { font-size: 13px; color: #94a3b8; }
+        .state-done { text-align: center; padding: 16px 0; }
+        .state-done .icon { font-size: 36px; margin-bottom: 8px; }
+        .state-done h3 { font-size: 17px; font-weight: 700; color: #10b981; margin-bottom: 4px; }
+        .state-done p { font-size: 13px; color: #94a3b8; }
+        .retrain-btn { margin-top: 8px; padding: 6px 16px; background: #f1f5f9;
+            border: none; border-radius: 6px; color: #64748b;
+            font-weight: 600; font-size: 13px; cursor: pointer; }
+        .train-btn { width: 100%; padding: 14px; background: #0ea5e9; color: #fff;
+            border: none; border-radius: 10px; font-size: 16px; font-weight: 800;
+            cursor: pointer; margin-top: 16px; transition: opacity .2s; }
+        .train-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .train-btn:not(:disabled):hover { opacity: .85; }
+        .stats { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+        .stat-row { display: flex; align-items: center; gap: 8px; }
+        .stat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .stat-name { flex: 1; font-size: 13px; color: #374151; font-weight: 500; }
+        .stat-count { font-size: 13px; color: #94a3b8; font-weight: 600; }
+
+        /* ── Preview card ── */
+        .preview-card { background: #fff; border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
+        .preview-header { padding: 14px 16px 10px; border-bottom: 1px solid #f1f5f9;
+            display: flex; align-items: center; justify-content: space-between; }
+        .preview-title { font-size: 14px; font-weight: 700; color: #374151; }
+        .model-badge { font-size: 10px; font-weight: 700;
+            background: linear-gradient(135deg, #0ea5e9, #10b981);
+            color: #fff; padding: 2px 8px; border-radius: 10px; }
+
+        /* Live camera preview */
+        .preview-vis-wrap { background: #0f172a; position: relative; overflow: hidden; }
+        .preview-vis-canvas { width: 100%; display: block; }
+        .preview-placeholder { position: absolute; inset: 0; display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+            color: #334155; font-size: 13px; gap: 6px; }
+        .preview-placeholder .cam-icon { font-size: 28px; }
+
+        .detect-status { padding: 12px 16px; border-bottom: 1px solid #f1f5f9;
+            min-height: 56px; display: flex; align-items: center; gap: 10px; transition: all .2s; }
+        .output-section { padding: 14px 16px; }
+        .output-title { font-size: 11px; font-weight: 700; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
+        .output-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .output-label { width: 80px; font-size: 13px; font-weight: 700;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+        .output-bar-wrap { flex: 1; height: 28px; background: #f1f5f9;
+            border-radius: 6px; overflow: hidden; position: relative; }
+        .output-bar-fill { height: 100%; border-radius: 6px; display: flex;
+            align-items: center; justify-content: flex-end; padding-right: 8px;
+            min-width: 0; transition: width .12s ease; }
+        .output-bar-pct { font-size: 12px; font-weight: 800; color: #fff; white-space: nowrap; }
+        .output-bar-pct-outside { position: absolute; right: 8px; top: 50%;
+            transform: translateY(-50%); font-size: 12px; font-weight: 700; color: #94a3b8; }
+        .threshold-wrap { padding: 10px 16px; background: #fafafa; border-top: 1px solid #f1f5f9; }
+        .threshold-label { display: flex; justify-content: space-between;
+            font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 5px; }
+        .threshold-slider { width: 100%; accent-color: #0ea5e9; cursor: pointer; }
+
+        /* ── Action buttons ── */
+        .action-wrap { padding: 12px 16px 16px; }
+        .action-btn { width: 100%; padding: 14px; border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 800; cursor: pointer; margin-top: 8px;
+            color: #fff; transition: opacity .2s; }
+        .action-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .action-btn:not(:disabled):hover { opacity: .85; }
+        .btn-test        { background: #06b6d4; }
+        .btn-deploy      { background: #0ea5e9; }
+        .btn-export      { background: #10b981; }
+        .btn-deploy-k230 { background: #f59e0b; }
+        .btn-reset-k230  { background: #ea580c; }
+
+        /* ── K230 settings ── */
+        .k230-settings { margin-top: 12px; font-size: 12px; color: #64748b;
+            background: #f8fafc; padding: 10px; border-radius: 8px;
+            border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 7px; }
+        .k230-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .k230-input { border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 6px;
+            font-size: 12px; outline: none; color: #1e293b; font-weight: 600; background: #fff; }
+        .k230-input:focus { border-color: #0ea5e9; }
+        .k230-select { border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 6px;
+            font-size: 12px; font-weight: 600; color: #1e293b; background: #fff;
+            cursor: pointer; outline: none; }
+        .k230-select:focus { border-color: #0ea5e9; }
+
+        /* ── USB progress ── */
+        .usb-progress-panel { display: none; background: #0f172a; border-radius: 8px;
+            padding: 12px 14px; margin-top: 10px; border: 1px solid #1e293b; }
+        .usb-progress-panel.visible { display: block; }
+        .usb-progress-title { font-size: 11px; font-weight: 700; color: #64748b;
+            text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px;
+            display: flex; align-items: center; gap: 6px; }
+        .usb-file-row { margin-bottom: 8px; }
+        .usb-file-label { font-size: 11px; font-weight: 600; color: #94a3b8;
+            margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .usb-file-label span:last-child { color: #f59e0b; font-family: monospace; }
+        .usb-file-bar { width: 100%; height: 5px; background: #1e293b;
+            border-radius: 3px; overflow: hidden; }
+        .usb-file-fill { height: 100%; border-radius: 3px; transition: width .1s linear; width: 0%; }
+        .usb-log { font-family: 'Courier New', monospace; font-size: 10px; color: #475569;
+            margin-top: 8px; line-height: 1.7; max-height: 60px; overflow-y: auto; }
+        .usb-log .ok   { color: #10b981; }
+        .usb-log .err  { color: #ef4444; }
+        .usb-log .warn { color: #f59e0b; }
+        .usb-log .info { color: #38bdf8; }
+        .serial-warn { display: none; background: #fff7ed; border: 1px solid #fed7aa;
+            border-radius: 6px; padding: 8px 12px; font-size: 11px; color: #9a3412;
+            margin-top: 8px; line-height: 1.6; }
+        .serial-warn.show { display: block; }
+
+        /* ── Misc ── */
+        .hint { font-size: 11px; color: #94a3b8; text-align: center; margin-top: 10px; line-height: 1.6; }
+        .spinner { display: inline-block; width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+            border-radius: 50%; animation: spin .7s linear infinite;
+            vertical-align: middle; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .pulse-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+            background: #f59e0b; animation: pulseD 1.4s ease infinite; }
+        @keyframes pulseD { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.7)} }
+        .rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            background: #ef4444; animation: recB .6s ease infinite alternate; }
+        @keyframes recB { from{opacity:1} to{opacity:.2} }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <button class="back-btn" onclick="goBack()">← Workspace</button>
+    <h1>Pose Training <span class="header-badge">🧘 Pose ML</span></h1>
+    <div style="display:flex;gap:8px;align-items:center">
+        <button class="reset-btn" onclick="resetPage()">🔄 Reset</button>
+        <button class="deploy-btn" id="deployHeaderBtn" onclick="deployToBlockly()" disabled>
+            Deploy to Blocks →
+        </button>
+    </div>
+</div>
+
+<div class="status-bar" id="statusBar">Loading MoveNet model — please wait...</div>
+
+<div class="columns">
+
+    <!-- ── Column 1: Collect ── -->
+    <div class="col">
+        <div class="col-title">1. Collect Poses</div>
+
+        <!-- Model load bar -->
+        <div class="model-load-bar" id="modelLoadBar">
+            <div class="model-load-title">
+                <span id="modelLoadIcon">⏳</span>
+                <span id="modelLoadTitle">Loading MoveNet backbone...</span>
+            </div>
+            <div class="model-load-status" id="modelLoadStatus">
+                Downloading MoveNet Thunder (~13 MB). Runs once.
+            </div>
+            <div class="model-load-track">
+                <div class="model-load-fill" id="modelLoadFill"></div>
+            </div>
+        </div>
+
+        <div class="extractor-box">
+            <div class="extractor-row">
+                <label for="poseExtractorSelect">Training model:</label>
+                <select id="poseExtractorSelect" class="extractor-select"
+                        onchange="changePoseExtractor(this.value)">
+                    <option value="movenet">MoveNet — Laptop Webcam</option>
+                    <option value="k230-yolo">YOLOv8 Pose — K230 Camera (recommended)</option>
+                </select>
+            </div>
+            <div class="extractor-help" id="poseExtractorHelp">
+                MoveNet runs in this browser. Use the laptop webcam to collect and preview poses.
+            </div>
+        </div>
+
+        <div id="classList"></div>
+
+        <button class="add-class-btn" onclick="addClass()" id="addClassBtn" disabled>
+            + Add a Pose Class
+        </button>
+
+        <div class="tips-box">
+            💡 <b>Tips for pose training:</b><br>
+            • Hold each pose clearly and steadily<br>
+            • 20–30 samples per pose is ideal<br>
+            • Vary your position slightly each sample<br>
+            • Make sure your full body is in frame<br>
+            • Good lighting helps keypoint accuracy
+        </div>
+        <div class="warn-box">
+            ℹ️ <b>How it works:</b><br>
+            • MoveNet extracts 17 body keypoints<br>
+            • A dense classifier is trained on top<br>
+            • Only one person per frame is detected<br>
+            • Runs fully in your browser — no server
+        </div>
+    </div>
+
+    <div class="arrow">→</div>
+
+    <!-- ── Column 2: Train ── -->
+    <div class="col">
+        <div class="col-title">2. Train Model</div>
+        <div class="train-card">
+            <div id="trainStateBox">
+                <div class="state-ready">
+                    <div class="icon">🧘</div>
+                    <h3>Ready to train.</h3>
+                    <p>Add at least 20 samples per pose<br>then press Train.</p>
+                </div>
+            </div>
+            <button class="train-btn" id="trainBtn" onclick="trainModel()" disabled>
+                Train Model
+            </button>
+            <div class="stats" id="statsList"></div>
+        </div>
+    </div>
+
+    <div class="arrow">→</div>
+
+    <!-- ── Column 3: Preview & Deploy ── -->
+    <div class="col">
+        <div class="col-title">3. Preview &amp; Deploy</div>
+        <div class="preview-card">
+
+            <div class="preview-header">
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span class="preview-title">Live Preview</span>
+                    <span class="model-badge" id="previewModelBadge">MoveNet</span>
+                </div>
+                <div style="display:flex;gap:6px">
+                    <button class="action-btn btn-test" id="testBtn"
+                        onclick="startLivePreview()" disabled
+                        style="width:auto;padding:6px 16px;font-size:13px;margin-top:0;
+                               background:#0ea5e9;border-radius:8px">
+                        ▶ Start
+                    </button>
+                    <button class="action-btn" id="stopBtn"
+                        onclick="stopLivePreview()" disabled
+                        style="width:auto;padding:6px 16px;font-size:13px;margin-top:0;
+                               background:#1e293b;border-radius:8px">
+                        ■ Stop
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live camera canvas -->
+            <div class="preview-vis-wrap" id="previewWrap" style="height:260px">
+                <canvas id="previewCanvas" class="preview-vis-canvas"
+                    style="width:100%;height:100%;display:block;object-fit:cover"></canvas>
+                <div class="preview-placeholder" id="previewPlaceholder">
+                    <div class="cam-icon">🧘</div>
+                    <div>Click ▶ Start to begin</div>
+                    <div style="font-size:11px;color:#334155">Real-time pose classification</div>
+                </div>
+            </div>
+
+            <div class="detect-status" id="detectStatus">
+                <div style="width:36px;height:36px;border-radius:50%;background:#f1f5f9;
+                     display:flex;align-items:center;justify-content:center;
+                     font-size:18px;flex-shrink:0">🧘</div>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#94a3b8">Not Detected</div>
+                    <div style="font-size:11px;color:#cbd5e1;margin-top:1px">Train model and start camera</div>
+                </div>
+            </div>
+
+            <div class="output-section">
+                <div class="output-title">Output</div>
+                <div id="outputBars"></div>
+            </div>
+
+            <div class="threshold-wrap">
+                <div class="threshold-label">
+                    <span>Detection Threshold</span>
+                    <span id="thresholdValue">80%</span>
+                </div>
+                <input type="range" class="threshold-slider" id="thresholdSlider"
+                    min="50" max="99" value="80" oninput="updateThreshold(this.value)"/>
+            </div>
+
+            <div class="action-wrap">
+                <button class="action-btn btn-deploy" id="deployCardBtn"
+                    onclick="deployToBlockly()" disabled>Deploy to Blockly</button>
+                <button class="action-btn btn-deploy-k230" id="deployK230Btn"
+                    onclick="deployToK230()" disabled>🚀 Deploy to K230</button>
+                <button class="action-btn btn-reset-k230" id="resetK230Btn"
+                    onclick="resetK230PoseBoard()">↻ Reset K230 Board</button>
+                <button class="action-btn btn-export" id="exportBtn"
+                    onclick="exportKmodel()" disabled>Export .kmodel (Local)</button>
+
+                <div class="k230-settings">
+                    <div class="k230-row">
+                        <span>Method:</span>
+                        <select class="k230-select" id="deployMethodInput"
+                            onchange="onDeployMethodChange(this.value)">
+                            <option value="wifi" selected>Wi-Fi</option>
+                            <option value="usb">USB (WebSerial)</option>
+                        </select>
+                    </div>
+                    <div class="k230-row" id="wifiRow">
+                        <span>K230 IP:</span>
+                        <input type="text" class="k230-input" id="k230IpInput"
+                            value="192.168.4.1" style="width:110px">
+                        <span>Port:</span>
+                        <input type="text" class="k230-input" id="k230PortInput"
+                            value="8080" style="width:50px">
+                    </div>
+                    <div class="k230-row" id="usbBaudRow" style="display:none">
+                        <span>Baud:</span>
+                        <select class="k230-select" id="usbBaudSelect">
+                            <option value="115200">115200 — safe</option>
+                            <option value="921600" selected>921600 — fast</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="serial-warn" id="serialWarn">
+                    ⚡ <b>USB requires Chrome / Edge v89+</b> on desktop.
+                </div>
+
+                <div class="usb-progress-panel" id="usbProgressPanel">
+                    <div class="usb-progress-title">
+                        <span class="pulse-dot"></span> USB Transfer
+                    </div>
+                    <div class="usb-file-row">
+                        <div class="usb-file-label">
+                            <span>pose_model.kmodel</span><span id="usbFile1Pct">0%</span>
+                        </div>
+                        <div class="usb-file-bar">
+                            <div class="usb-file-fill" id="usbFile1Fill" style="background:#f59e0b"></div>
+                        </div>
+                    </div>
+                    <div class="usb-file-row">
+                        <div class="usb-file-label">
+                            <span>pose_labels.txt</span><span id="usbFile2Pct">0%</span>
+                        </div>
+                        <div class="usb-file-bar">
+                            <div class="usb-file-fill" id="usbFile2Fill" style="background:#38bdf8"></div>
+                        </div>
+                    </div>
+                    <div class="usb-log" id="usbLog"></div>
+                </div>
+
+                <p class="hint">
+                    <b>Deploy to Blockly</b> adds pose AI blocks.<br>
+                    <b>Deploy to K230</b> pushes model to board.<br>
+                    <b>Reset K230 Board</b> restarts the selected board through USB.<br>
+                    <b>Export</b> downloads files locally.
+                </p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+'use strict';
+
+// ──────────────────────────────────────────────────────────────
+// CONFIG
+// ──────────────────────────────────────────────────────────────
+const CONVERT_SERVER = (() => {
+    const origin = window.location.origin;
+    const isCloudflare = origin && origin.includes('trycloudflare.com');
+    const isWindowsAgent = origin && origin.includes('localhost:5002');
+    if (isCloudflare || isWindowsAgent) {
+        return origin;
+    }
+    return 'http://127.0.0.1:5002';
+})();
+const CHUNK_BYTES      = 192;
+const SERIAL_SUPPORTED = 'serial' in navigator;
+const NUM_KEYPOINTS    = 17;   // MoveNet standard
+const MIN_POSE_CONF    = 0.3;  // minimum MoveNet confidence to accept a sample
+
+// ──────────────────────────────────────────────────────────────
+// STATE
+// ──────────────────────────────────────────────────────────────
+let moveNet         = null;   // loaded MoveNet model
+let classifier      = null;   // tf.sequential dense head we train
+let trained         = false;
+let classNamesCopy  = [];
+let livePreviewActive = false;
+
+// Training dataset stored as tensors: [{xs: Tensor1D, label: number}, ...]
+let dataset = [];  // {xs: Float32Array (34 values), label: number}
+
+let classes = [
+    {id:1, name:'Pose1', color:'#0ea5e9'},
+    {id:2, name:'Pose2', color:'#10b981'},
+];
+let nextClassId = 3;
+const CLASS_COLORS = ['#0ea5e9','#10b981','#f54254','#7c3aed',
+                      '#f59e0b','#ec4899','#8b5cf6','#06b6d4','#84cc16'];
+
+// Colors beyond CLASS_COLORS are generated via golden-angle hue rotation
+// so class 10+ never collides with an earlier class's color.
+function hueToHex(h, s=70, l=50){
+    s/=100; l/=100;
+    const k = n => (n + h/30) % 12;
+    const a = s * Math.min(l, 1-l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n),1)));
+    const toHex = x => Math.round(255*x).toString(16).padStart(2,'0');
+    return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+function colorForId(id){
+    if(id <= CLASS_COLORS.length) return CLASS_COLORS[id-1];
+    return hueToHex((id * 137.508) % 360);
+}
+
+let THRESHOLD = 0.80;
+let FEATURE_EXTRACTOR = 'movenet'; // 'movenet' | 'k230-yolo'
+
+// Per-class sample counts
+let classCounts = {};
+
+// Thumbnail stores: thumbnailStore[classIdx] = [ImageData, ...]
+// thumbnailDatasetIdx[classIdx] = [datasetIndex, ...]
+let thumbnailStore = {};
+let thumbnailDatasetIdx = {};
+
+// Camera / capture state
+let camStream      = null;
+let camVideoEl     = null;
+let camOpenIdx     = null;
+let camAnimFrame   = null;
+let holdTimer      = null;
+let isCapturing    = false;
+
+// K230 YOLO pose feature stream (WebSerial + raw REPL)
+let k230PosePort          = null;
+let lastK230PosePort      = null;
+let k230PoseReader        = null;
+let k230PoseRunning       = false;
+let k230PoseLineBuf       = '';
+let k230PoseLatest        = null;
+let k230PoseFrameSeq      = 0;
+let k230PoseCapturedSeq   = -1;
+let k230PosePreviewMode   = false;
+let k230PoseInferBusy     = false;
+let k230PoseCameraImage   = null;
+let k230PoseCameraUrl     = null;
+let k230PoseImageSeq      = 0;
+let camSourceType  = null;   // 'webcam' | 'esp32' | 'k230-yolo'
+
+// ESP32-S3 camera (view-only, via WebSerial CAPTURE snapshot protocol)
+let esp32Port           = null;
+let esp32Reader         = null;
+let esp32Writer         = null;
+let esp32LineBuf         = '';
+let esp32ImageActive    = false;
+let esp32ImageB64       = '';
+let esp32Busy           = false;
+let esp32CaptureTimer   = null;
+let esp32CaptureTimeout = null;
+
+// Live preview state
+let previewStream  = null;
+let previewVideo   = null;
+
+// ──────────────────────────────────────────────────────────────
+// WEBSERIAL STATE
+// ──────────────────────────────────────────────────────────────
+const ENC = new TextEncoder();
+const DEC = new TextDecoder();
+let port=null, portReader=null, portWriter=null;
+let connected=false, rxBuf='';
+const rxHooks=[];
+
+function usbLog(msg,cls=''){
+    const el=document.getElementById('usbLog');if(!el)return;
+    const line=document.createElement('div');if(cls)line.className=cls;
+    line.textContent=msg;el.appendChild(line);el.scrollTop=el.scrollHeight;
+}
+function usbLogClear(){const el=document.getElementById('usbLog');if(el)el.innerHTML='';}
+function usbSetProgress(idx,pct){
+    const p=Math.round(pct*100);
+    const pEl=document.getElementById(`usbFile${idx}Pct`);
+    const fEl=document.getElementById(`usbFile${idx}Fill`);
+    if(pEl)pEl.textContent=p+'%';if(fEl)fEl.style.width=p+'%';
+}
+function showUsbPanel(v){document.getElementById('usbProgressPanel')?.classList.toggle('visible',v);}
+function resetUsbPanel(){usbSetProgress(1,0);usbSetProgress(2,0);usbLogClear();showUsbPanel(false);}
+async function cleanupPort(){
+    connected=false;
+    try{portReader&&await portReader.cancel();}catch{}
+    try{portReader&&portReader.releaseLock();}catch{}
+    try{portWriter&&await portWriter.close();}catch{}
+    try{portWriter&&portWriter.releaseLock();}catch{}
+    try{port&&await port.close();}catch{}
+    port=portReader=portWriter=null;
+}
+async function rxPump(){
+    rxBuf='';
+    try{
+        while(connected){
+            const{value,done}=await portReader.read();if(done)break;
+            if(value?.length){const t=DEC.decode(value,{stream:true});rxBuf+=t;for(const h of rxHooks)h(t);}
+        }
+    }catch(e){if(connected)usbLog('RX error: '+e.message,'err');}
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function write(d){if(!portWriter)return;await portWriter.write(typeof d==='string'?ENC.encode(d):d);}
+async function enterRawREPL(){
+    usbLog('Entering Raw REPL...','info');
+    await write('\x03');await sleep(200);await write('\x03');await sleep(200);rxBuf='';
+    await write('\x01');await sleep(300);
+    let banner='',t=Date.now()+4000;
+    while(Date.now()<t){banner+=rxBuf;rxBuf='';if(banner.includes('raw REPL')){usbLog('Raw REPL ready ✓','ok');rxBuf='';return;}await sleep(50);}
+    await write('\x01');await sleep(500);banner+=rxBuf;rxBuf='';
+    if(banner.includes('raw REPL'))usbLog('Raw REPL ready ✓','ok');
+    else usbLog('Raw REPL banner not seen — reset board','warn');
+    rxBuf='';
+}
+async function exitRawREPL(){await write('\x02');await sleep(200);}
+async function execPy(code){
+    rxBuf='';await write(code);await write('\x04');
+    let full='';const dl=Date.now()+10000;
+    while(Date.now()<dl){
+        if(rxBuf.length){full+=rxBuf;rxBuf='';
+            const oi=full.indexOf('OK');
+            if(oi>=0){const a=full.slice(oi+2);const e1=a.indexOf('\x04');
+                if(e1>=0){const e2=a.indexOf('\x04',e1+1);
+                    if(e2>=0){const se=a.slice(e1+1,e2).trim();if(se)usbLog('stderr: '+se,'warn');return a.slice(0,e1).trim();}}}
+            if(full.includes('\r\n>')||full==='>'){await write('\x03');await sleep(100);rxBuf='';throw new Error('REPL continuation mode');}
+        }await sleep(10);
+    }throw new Error('Timeout. Last: '+full.slice(-40).replace(/\x04/g,'<EOT>'));
+}
+async function ensureDir(path){const p=path.replace(/\/$/,'');await execPy(`import os\r\ntry:\r\n os.mkdir('${p}')\r\nexcept:pass`);}
+async function writeFileOnBoard(dest,arr,onPct){
+    await execPy(`_f=open('${dest}','wb')`);
+    let off=0;
+    while(off<arr.length){
+        const sl=arr.slice(off,off+CHUNK_BYTES);
+        const hex=Array.from(sl).map(b=>b.toString(16).padStart(2,'0')).join('');
+        await execPy(`_f.write(bytes.fromhex('${hex}'))`);
+        off+=sl.length;if(onPct)onPct(off/arr.length);
+    }
+    await execPy(`_f.close();del _f`);
+}
+
+function onDeployMethodChange(val){
+    document.getElementById('wifiRow').style.display    =val==='wifi'?'flex':'none';
+    document.getElementById('usbBaudRow').style.display =val==='usb' ?'flex':'none';
+    document.getElementById('serialWarn').classList.toggle('show',val==='usb'&&!SERIAL_SUPPORTED);
+    if(val!=='usb')showUsbPanel(false);
+}
+
+// ──────────────────────────────────────────────────────────────
+// HELPERS
+// ──────────────────────────────────────────────────────────────
+function setStatus(msg){document.getElementById('statusBar').textContent=msg;}
+function updateThreshold(val){THRESHOLD=parseInt(val)/100;document.getElementById('thresholdValue').textContent=val+'%';}
+function downloadBlob(blob,name){
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');
+    a.href=url;a.download=name;document.body.appendChild(a);a.click();
+    document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function updateButtons(){
+    ['deployHeaderBtn','deployCardBtn','deployK230Btn','exportBtn','testBtn'].forEach(id=>{
+        const el=document.getElementById(id);if(el)el.disabled=!trained;
+    });
+    const stopBtn=document.getElementById('stopBtn');
+    if(stopBtn)stopBtn.disabled=true;
+}
+
+// ──────────────────────────────────────────────────────────────
+// MOVENET FEATURE EXTRACTION
+// Flattens 17 keypoints × (x, y) → Float32Array of length 34.
+// Coordinates are centered on the hip midpoint and scaled by torso
+// length (shoulder-to-hip distance) so the features describe pose
+// *shape* rather than where the person stands in the frame. Without
+// this, classes captured at slightly different distances/positions
+// overlap in feature space and become harder to tell apart as more
+// classes are added.
+// ──────────────────────────────────────────────────────────────
+// Keypoints below this confidence are zeroed in the features. This MUST
+// match MIN_KP_SCORE in the K230's pose_classifier.py: the browser trains
+// on MoveNet (which hallucinates plausible coordinates for joints it
+// cannot see) while the K230 runs YOLOv8-pose (which returns junk for
+// them) — without identical gating the on-device features fall outside
+// the training distribution and one class wins constantly.
+const KP_MIN_SCORE = 0.3;
+
+function keypointsToFeatures(keypoints, imgW, imgH){
+    const arr = new Float32Array(NUM_KEYPOINTS * 2);
+
+    const lHip = keypoints[11], rHip = keypoints[12];
+    const lSh  = keypoints[5],  rSh  = keypoints[6];
+
+    const cx = (lHip && rHip) ? (lHip.x + rHip.x) / 2 : imgW / 2;
+    const cy = (lHip && rHip) ? (lHip.y + rHip.y) / 2 : imgH / 2;
+    const shx = (lSh && rSh) ? (lSh.x + rSh.x) / 2 : cx;
+    const shy = (lSh && rSh) ? (lSh.y + rSh.y) / 2 : cy - imgH * 0.25;
+
+    let scale = Math.hypot(shx - cx, shy - cy);
+    if (!scale || scale < 1e-3) scale = Math.max(imgW, imgH) * 0.25;
+
+    for(let i = 0; i < NUM_KEYPOINTS; i++){
+        const kp = keypoints[i];
+        const ok = kp && (kp.score === undefined || kp.score > KP_MIN_SCORE);
+        arr[i*2]   = ok ? (kp.x - cx) / scale : 0;
+        arr[i*2+1] = ok ? (kp.y - cy) / scale : 0;
+    }
+    return arr;
+}
+
+// ──────────────────────────────────────────────────────────────
+// POSE THUMBNAIL DRAWING
+// ──────────────────────────────────────────────────────────────
+const SKELETON_PAIRS = [
+    [5,6],[5,7],[7,9],[6,8],[8,10],
+    [5,11],[6,12],[11,12],[11,13],[13,15],[12,14],[14,16]
+];
+
+function drawPoseThumb(canvas, keypoints, color){
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+
+    if(!keypoints || keypoints.length < 17) return;
+
+    const srcW = 320, srcH = 240;
+    const scX = W / srcW, scY = H / srcH;
+
+    const tx = kp => (srcW - kp.x) * scX;
+    const ty = kp => kp.y * scY;
+
+    ctx.strokeStyle = color + 'cc';
+    ctx.lineWidth = 1.5;
+    SKELETON_PAIRS.forEach(([a,b])=>{
+        const ka=keypoints[a], kb=keypoints[b];
+        if(ka&&kb&&ka.score>0.2&&kb.score>0.2){
+            ctx.beginPath();ctx.moveTo(tx(ka),ty(ka));ctx.lineTo(tx(kb),ty(kb));ctx.stroke();
+        }
+    });
+
+    keypoints.forEach(kp=>{
+        if(kp.score > 0.2){
+            ctx.beginPath();ctx.arc(tx(kp),ty(kp),2.5,0,Math.PI*2);
+            ctx.fillStyle=color;ctx.fill();
+            ctx.strokeStyle='rgba(255,255,255,0.7)';ctx.lineWidth=0.8;ctx.stroke();
+        }
+    });
+}
+
+function drawSkeletonOnCanvas(ctx, keypoints, W, H, scaleX, scaleY, color){
+    const tx = kp => kp.x * scaleX;
+    const ty = kp => kp.y * scaleY;
+
+    ctx.strokeStyle = color+'cc';
+    ctx.lineWidth = 2;
+    SKELETON_PAIRS.forEach(([a,b])=>{
+        const ka=keypoints[a], kb=keypoints[b];
+        if(ka&&kb&&ka.score>MIN_POSE_CONF&&kb.score>MIN_POSE_CONF){
+            ctx.beginPath();ctx.moveTo(tx(ka),ty(ka));ctx.lineTo(tx(kb),ty(kb));ctx.stroke();
+        }
+    });
+    keypoints.forEach(kp=>{
+        if(kp.score > MIN_POSE_CONF){
+            ctx.beginPath();ctx.arc(tx(kp),ty(kp),4,0,Math.PI*2);
+            ctx.fillStyle=color;ctx.fill();
+            ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();
+        }
+    });
+}
+
+// ──────────────────────────────────────────────────────────────
+// LOAD MOVENET  (runs once on page load)
+// ──────────────────────────────────────────────────────────────
+async function loadBaseModel(){
+    const fill    = document.getElementById('modelLoadFill');
+    const titleEl = document.getElementById('modelLoadTitle');
+    const statusEl= document.getElementById('modelLoadStatus');
+    const iconEl  = document.getElementById('modelLoadIcon');
+
+    try{
+        let fakeProgress = 0;
+        const ticker = setInterval(()=>{
+            fakeProgress = Math.min(90, fakeProgress + Math.random()*6);
+            if(fill) fill.style.width = fakeProgress+'%';
+        }, 400);
+
+        const model = poseDetection.SupportedModels.MoveNet;
+        moveNet = await poseDetection.createDetector(model, {
+            modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER
+        });
+
+        clearInterval(ticker);
+        if(fill) fill.style.width = '100%';
+
+        if(iconEl)  iconEl.textContent  = '✓';
+        if(titleEl) titleEl.textContent = 'MoveNet ready — SinglePose Thunder';
+        if(statusEl)statusEl.textContent= 'Pretrained on human body keypoints. Collect poses to fine-tune.';
+
+        document.getElementById('addClassBtn').disabled = false;
+        document.getElementById('trainBtn').disabled    = false;
+
+        setStatus('MoveNet loaded ✓ — add samples for each pose class, then train.');
+        document.getElementById('modelLoadBar').style.borderLeftColor = '#10b981';
+        render();
+
+    }catch(e){
+        if(fill){fill.style.width='100%';fill.style.background='#ef4444';}
+        if(iconEl)  iconEl.textContent  = '✗';
+        if(titleEl) titleEl.textContent = 'Model failed to load';
+        if(statusEl)statusEl.textContent= e.message;
+        setStatus('Model load failed: '+e.message);
+        console.error('MoveNet load error:',e);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// CAMERA CAPTURE PER CLASS
+// ──────────────────────────────────────────────────────────────
+async function changePoseExtractor(nextExtractor){
+    if(nextExtractor === FEATURE_EXTRACTOR) return;
+    const select = document.getElementById('poseExtractorSelect');
+
+    if(dataset.length > 0){
+        const ok = confirm(
+            'Changing the training model must clear the existing pose samples and trained classifier.\n\nContinue?'
+        );
+        if(!ok){
+            if(select) select.value = FEATURE_EXTRACTOR;
+            return;
+        }
+    }
+
+    stopLivePreview();
+    stopCamCapture();
+    await stopK230PoseStream(false);
+
+    dataset = [];
+    thumbnailStore = {};
+    thumbnailDatasetIdx = {};
+    classes.forEach(cls=>{ classCounts[cls.name] = 0; });
+    trained = false;
+    classNamesCopy = [];
+    if(classifier){ classifier.dispose(); classifier = null; }
+
+    FEATURE_EXTRACTOR = nextExtractor;
+    if(select) select.value = FEATURE_EXTRACTOR;
+    const addButton=document.getElementById('addClassBtn');
+    const trainButton=document.getElementById('trainBtn');
+    if(addButton) addButton.disabled = FEATURE_EXTRACTOR==='movenet' && !moveNet;
+    if(trainButton) trainButton.disabled = FEATURE_EXTRACTOR==='movenet' && !moveNet;
+    const help = document.getElementById('poseExtractorHelp');
+    if(help){
+        help.textContent = FEATURE_EXTRACTOR === 'k230-yolo'
+            ? 'YOLOv8 runs on the connected K230. USB returns the same 34 features used during final board inference.'
+            : 'MoveNet runs in this browser. Use the laptop webcam to collect and preview poses.';
+    }
+    const previewBadge=document.getElementById('previewModelBadge');
+    if(previewBadge) previewBadge.textContent=FEATURE_EXTRACTOR==='k230-yolo'?'K230 YOLO':'MoveNet';
+    updateButtons();
+    render();
+    setStatus(FEATURE_EXTRACTOR === 'k230-yolo'
+        ? 'K230 YOLO selected — connect the K230 camera for each pose class.'
+        : 'MoveNet selected — use the laptop webcam to collect poses.');
+}
+
+async function openCamCapture(classIdx){
+    if(!moveNet){setStatus('MoveNet not loaded yet.');return;}
+    if(camOpenIdx !== null) stopCamCapture();
+
+    try{
+        camStream = await navigator.mediaDevices.getUserMedia({
+            video:{width:320,height:240,facingMode:'user'}, audio:false
+        });
+        camVideoEl = document.createElement('video');
+        camVideoEl.srcObject = camStream;
+        camVideoEl.width = 320; camVideoEl.height = 240;
+        await camVideoEl.play();
+
+        camOpenIdx = classIdx;
+        camSourceType = 'webcam';
+        window._lastLivePose = null;
+        render();
+        animateCamCanvas(classIdx);
+        startPoseLoop();
+        setStatus('📷 Camera open — hold the button to capture samples.');
+    }catch(e){alert('Camera error: '+e.message);console.error(e);}
+}
+
+// ──────────────────────────────────────────────────────────────
+// ESP32-S3 CAMERA (view-only, over WebSerial)
+// Firmware has no continuous video stream — it replies to a
+// "CAPTURE\n" command with one base64 JPEG snapshot framed as:
+//   SERIAL IMAGE_BEGIN <len> <b64len>\n
+//   SERIAL IMAGE_CHUNK <b64 chars>\n   (repeated)
+//   SERIAL IMAGE_END\n
+// so "live" view is simulated by polling CAPTURE on a timer.
+// Frames are shown for visual confirmation only — they are NOT fed
+// into MoveNet, since the 96×96 grayscale sensor is far too small
+// for reliable body-keypoint detection. Training samples still come
+// from the regular Webcam button.
+// ──────────────────────────────────────────────────────────────
+async function openEsp32CamCapture(classIdx){
+    if(!('serial' in navigator)){alert('ESP32-S3 USB camera requires Chrome / Edge v89+ on desktop.');return;}
+    if(camOpenIdx !== null) stopCamCapture();
+
+    try{
+        if(!esp32Port){
+            esp32Port = await navigator.serial.requestPort();
+            await esp32Port.open({baudRate:115200});
+            esp32Writer = esp32Port.writable.getWriter();
+            esp32ReaderLoop();
+        }
+
+        camOpenIdx = classIdx;
+        camSourceType = 'esp32';
+        render();
+        setStatus('🔌 ESP32-S3 camera connected — live view only (samples still captured via Webcam).');
+
+        esp32RequestFrame();
+        esp32CaptureTimer = setInterval(esp32RequestFrame, 1000);
+    }catch(e){
+        alert('ESP32-S3 connect error: '+e.message);
+        console.error(e);
+        await esp32Disconnect();
+    }
+}
+
+function esp32RequestFrame(){
+    if(camSourceType !== 'esp32' || esp32Busy || !esp32Writer) return;
+    esp32Busy = true;
+    if(esp32CaptureTimeout) clearTimeout(esp32CaptureTimeout);
+    esp32CaptureTimeout = setTimeout(()=>{
+        esp32Busy = false; esp32ImageActive = false;
+        setStatus('ESP32-S3: capture timed out, retrying...');
+    }, 5000);
+    esp32Writer.write(new TextEncoder().encode('CAPTURE\n')).catch(e=>{
+        esp32Busy = false;
+        setStatus('ESP32-S3 write error: '+e.message);
+    });
+}
+
+async function esp32ReaderLoop(){
+    const decoder = new TextDecoder();
+    try{
+        while(esp32Port){
+            esp32Reader = esp32Port.readable.getReader();
+            try{
+                while(true){
+                    const {value,done} = await esp32Reader.read();
+                    if(done) break;
+                    if(value) esp32HandleText(decoder.decode(value,{stream:true}));
+                }
+            }finally{ esp32Reader.releaseLock(); }
+        }
+    }catch(e){
+        if(esp32Port) console.error('ESP32-S3 serial read error:',e);
+    }
+}
+
+function esp32HandleText(text){
+    esp32LineBuf += text.replace(/\r/g,'');
+    let idx;
+    while((idx = esp32LineBuf.indexOf('\n')) >= 0){
+        const line = esp32LineBuf.slice(0,idx);
+        esp32LineBuf = esp32LineBuf.slice(idx+1);
+        esp32ProcessLine(line);
+    }
+}
+
+function esp32ProcessLine(line){
+    if(line.startsWith('SERIAL IMAGE_BEGIN')){
+        esp32ImageActive = true; esp32ImageB64 = '';
+        return;
+    }
+    if(line.startsWith('SERIAL IMAGE_CHUNK ')){
+        if(esp32ImageActive) esp32ImageB64 += line.slice('SERIAL IMAGE_CHUNK '.length).trim();
+        return;
+    }
+    if(line.startsWith('SERIAL IMAGE_END')){
+        if(esp32ImageActive && esp32ImageB64) esp32RenderFrame(esp32ImageB64);
+        esp32ImageActive = false; esp32ImageB64 = ''; esp32Busy = false;
+        if(esp32CaptureTimeout){clearTimeout(esp32CaptureTimeout); esp32CaptureTimeout=null;}
+        return;
+    }
+    if(line.startsWith('SERIAL ERR')){
+        esp32ImageActive = false; esp32ImageB64 = ''; esp32Busy = false;
+        if(esp32CaptureTimeout){clearTimeout(esp32CaptureTimeout); esp32CaptureTimeout=null;}
+        setStatus('ESP32-S3: '+line.replace(/^SERIAL ERR\s*/,''));
+    }
+}
+
+function esp32RenderFrame(b64){
+    if(camSourceType !== 'esp32' || camOpenIdx === null) return;
+    const canvas = document.getElementById(`cam-canvas-${camOpenIdx}`);
+    if(!canvas) return;
+    const img = new Image();
+    img.onload = ()=>{
+        if(camSourceType !== 'esp32' || camOpenIdx === null) return;
+        const liveCanvas = document.getElementById(`cam-canvas-${camOpenIdx}`);
+        if(!liveCanvas) return;
+        const ctx = liveCanvas.getContext('2d');
+        ctx.clearRect(0,0,liveCanvas.width,liveCanvas.height);
+        ctx.drawImage(img,0,0,liveCanvas.width,liveCanvas.height);
+    };
+    img.onerror = ()=>setStatus('ESP32-S3: failed to decode frame.');
+    img.src = 'data:image/jpeg;base64,'+b64;
+}
+
+async function esp32Disconnect(){
+    if(esp32CaptureTimer){clearInterval(esp32CaptureTimer); esp32CaptureTimer=null;}
+    if(esp32CaptureTimeout){clearTimeout(esp32CaptureTimeout); esp32CaptureTimeout=null;}
+    esp32Busy=false; esp32ImageActive=false; esp32ImageB64=''; esp32LineBuf='';
+    const p = esp32Port; esp32Port = null;
+    try{esp32Reader && await esp32Reader.cancel();}catch{}
+    try{esp32Reader && esp32Reader.releaseLock();}catch{}
+    try{esp32Writer && await esp32Writer.close();}catch{}
+    try{esp32Writer && esp32Writer.releaseLock();}catch{}
+    try{p && await p.close();}catch{}
+    esp32Reader = esp32Writer = null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// K230 YOLO POSE CAMERA (exact on-device features over WebSerial)
+// ─────────────────────────────────────────────────────────────────────────────
+function k230PoseDelay(ms){ return new Promise(resolve=>setTimeout(resolve,ms)); }
+
+async function openK230PoseCapture(classIdx){
+    if(FEATURE_EXTRACTOR !== 'k230-yolo'){
+        setStatus('Select “YOLOv8 Pose — K230 Camera” first.');
+        return;
+    }
+    // Keep one WebSerial/YOLO stream alive while the user moves through
+    // multiple pose classes. Only the active capture card changes.
+    if(k230PoseRunning&&k230PosePort){
+        clearInterval(holdTimer);holdTimer=null;isCapturing=false;
+        if(k230PosePreviewMode){
+            k230PosePreviewMode=false;
+            livePreviewActive=false;
+            _previewScores=null;
+            if(_previewCtx&&_previewCanvas){
+                _previewCtx.clearRect(0,0,_previewCanvas.width,_previewCanvas.height);
+            }
+            document.getElementById('previewPlaceholder').style.display='flex';
+            document.getElementById('testBtn').disabled=!trained;
+            document.getElementById('stopBtn').disabled=true;
+            document.getElementById('stopBtn').textContent='■ Stop';
+            resetDetectStatus();
+        }
+        camOpenIdx=classIdx;
+        camSourceType='k230-yolo';
+        // Require a fresh board result after switching so the final frame
+        // from the previous pose cannot be captured into this class.
+        k230PoseCapturedSeq=k230PoseFrameSeq;
+        render();
+        requestAnimationFrame(()=>drawK230PoseFrame(k230PoseLatest));
+        setStatus(`Using the connected K230 for “${classes[classIdx]?.name||`Pose ${classIdx+1}`}” — no serial reconnect needed.`);
+        return;
+    }
+    await startK230PoseStream(classIdx, false);
+}
+
+async function startK230PoseStream(classIdx=null, previewMode=false){
+    if(!SERIAL_SUPPORTED){
+        alert('K230 YOLO camera requires Chrome or Edge with WebSerial support.');
+        return false;
+    }
+
+    // After sample collection, move the existing stream to Live Preview.
+    // YOLO keeps running on the board and WebSerial stays open.
+    if(previewMode&&k230PoseRunning&&k230PosePort){
+        clearInterval(holdTimer);holdTimer=null;isCapturing=false;
+        camOpenIdx=null;
+        camSourceType=null;
+        k230PosePreviewMode=true;
+        k230PoseCapturedSeq=k230PoseFrameSeq;
+        render();
+
+        livePreviewActive=true;
+        _previewPose=null;
+        _previewScores=null;
+        _previewCanvas=document.getElementById('previewCanvas');
+        _previewCanvas.width=320;
+        _previewCanvas.height=240;
+        _previewCtx=_previewCanvas.getContext('2d');
+        document.getElementById('previewPlaceholder').style.display='none';
+        document.getElementById('testBtn').disabled=true;
+        document.getElementById('stopBtn').disabled=false;
+        document.getElementById('stopBtn').textContent='Disconnect';
+        requestAnimationFrame(()=>drawK230PoseFrame(k230PoseLatest));
+        setStatus('K230 YOLO live preview started using the existing serial connection.');
+        return true;
+    }
+
+    if(camOpenIdx !== null) stopCamCapture();
+    if(livePreviewActive && !previewMode) stopLivePreview();
+    await stopK230PoseStream(false);
+
+    try{
+        setStatus('Select the K230 USB serial port…');
+        const selectedPort = await navigator.serial.requestPort();
+        await selectedPort.open({baudRate:115200, bufferSize:65536});
+
+        k230PosePort = selectedPort;
+        lastK230PosePort = selectedPort;
+        k230PoseRunning = true;
+        k230PosePreviewMode = previewMode;
+        k230PoseLineBuf = '';
+        k230PoseLatest = null;
+        k230PoseFrameSeq = 0;
+        k230PoseCapturedSeq = -1;
+        k230PoseCameraImage = null;
+        k230PoseImageSeq++;
+        if(k230PoseCameraUrl){ URL.revokeObjectURL(k230PoseCameraUrl); k230PoseCameraUrl=null; }
+
+        if(previewMode){
+            livePreviewActive = true;
+            _previewCanvas = document.getElementById('previewCanvas');
+            _previewCanvas.width = 320;
+            _previewCanvas.height = 240;
+            _previewCtx = _previewCanvas.getContext('2d');
+            document.getElementById('previewPlaceholder').style.display = 'none';
+            document.getElementById('testBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('stopBtn').textContent = 'Disconnect';
+        }else{
+            camOpenIdx = classIdx;
+            camSourceType = 'k230-yolo';
+            render();
+        }
+
+        setStatus('K230 connecting — loading YOLOv8 pose on the board…');
+
+        // Stop the launcher/application, enter raw REPL, then call the
+        // dedicated feature-stream function stored in pose_classifier.py.
+        let writer = selectedPort.writable.getWriter();
+        await writer.write(new Uint8Array([0x03,0x03]));
+        writer.releaseLock();
+        await k230PoseDelay(700);
+        for(let i=0;i<3;i++){
+            writer = selectedPort.writable.getWriter();
+            await writer.write(new Uint8Array([0x03]));
+            writer.releaseLock();
+            await k230PoseDelay(180);
+        }
+        writer = selectedPort.writable.getWriter();
+        await writer.write(new Uint8Array([0x01]));
+        writer.releaseLock();
+        await k230PoseDelay(500);
+
+        const script = [
+            '\r\nimport apps.pose_classifier.pose_classifier as _pose_training',
+            '_pose_training.start_training_stream()',
+            ''
+        ].join('\n');
+        writer = selectedPort.writable.getWriter();
+        await writer.write(ENC.encode(script));
+        await writer.write(new Uint8Array([0x04]));
+        writer.releaseLock();
+
+        k230PoseReadLoop(selectedPort).catch(error=>{
+            if(k230PoseRunning){
+                console.error('K230 pose stream error:',error);
+                setStatus('K230 pose stream error: '+error.message);
+                stopK230PoseStream();
+            }
+        });
+        return true;
+    }catch(error){
+        if(error.name !== 'NotFoundError'){
+            alert('K230 YOLO connection failed: '+error.message);
+            console.error(error);
+        }
+        await stopK230PoseStream(false);
+        if(previewMode){
+            livePreviewActive=false;
+            const placeholder=document.getElementById('previewPlaceholder');
+            if(placeholder) placeholder.style.display='flex';
+            const testButton=document.getElementById('testBtn');
+            const stopButton=document.getElementById('stopBtn');
+            if(testButton) testButton.disabled=!trained;
+            if(stopButton) stopButton.disabled=true;
+            resetDetectStatus();
+        }else{
+            camOpenIdx=null; camSourceType=null; render();
+        }
+        return false;
+    }
+}
+
+async function k230PoseReadLoop(activePort){
+    const decoder = new TextDecoder();
+    const reader = activePort.readable.getReader();
+    k230PoseReader = reader;
+    try{
+        while(k230PoseRunning){
+            const {value,done} = await reader.read();
+            if(done) break;
+            k230PoseLineBuf += decoder.decode(value,{stream:true}).replace(/\r/g,'');
+            let newline;
+            while((newline=k230PoseLineBuf.indexOf('\n'))>=0){
+                const line=k230PoseLineBuf.slice(0,newline);
+                k230PoseLineBuf=k230PoseLineBuf.slice(newline+1);
+                k230PoseProcessLine(line);
+            }
+            // A base64 JPEG is much larger than a pose JSON line. Keep enough
+            // buffered text for one complete preview frame.
+            if(k230PoseLineBuf.length>500000) k230PoseLineBuf=k230PoseLineBuf.slice(-250000);
+        }
+    }finally{
+        try{reader.releaseLock();}catch{}
+        if(k230PoseReader===reader) k230PoseReader=null;
+    }
+}
+
+function k230PoseProcessLine(line){
+    if(line.includes('POSE_STREAM_READY')){
+        setStatus(k230PosePreviewMode
+            ? 'K230 YOLO live preview ready — show a pose to the board camera.'
+            : 'K230 YOLO camera ready — hold Capture to collect exact board features.');
+        return;
+    }
+    const imageMarker=line.indexOf('POSE_IMG:');
+    if(imageMarker>=0){
+        loadK230PoseCameraFrame(line.slice(imageMarker+'POSE_IMG:'.length).trim());
+        return;
+    }
+    const marker=line.indexOf('POSE_DATA:');
+    if(marker>=0){
+        try{
+            const payload=JSON.parse(line.slice(marker+'POSE_DATA:'.length).trim());
+            if(!Array.isArray(payload.features)||payload.features.length!==34||
+               !Array.isArray(payload.keypoints)||payload.keypoints.length!==17) return;
+            payload.features=new Float32Array(payload.features);
+            payload.keypoints=payload.keypoints.map(k=>({x:k[0],y:k[1],score:k[2]}));
+            k230PoseLatest=payload;
+            k230PoseFrameSeq++;
+            drawK230PoseFrame(payload);
+            if(k230PosePreviewMode) classifyK230PosePreview(payload);
+        }catch(error){ console.warn('Bad K230 pose payload:',error); }
+        return;
+    }
+    if(line.includes('POSE_WAIT:')){
+        setStatus('K230 YOLO: keep both shoulders visible.');
+    }else if(line.includes('POSE_NONE')){
+        setStatus('K230 YOLO: no person detected — step into the board camera view.');
+    }else if(line.includes('POSE_IMG_ERROR:')){
+        setStatus('K230 pose is running, but the board could not encode the camera preview frame.');
+    }else if(line.includes('POSE_STREAM_ERROR:')){
+        setStatus('K230 YOLO error: yolov8n-pose.kmodel is missing from /sdcard/kmodel/.');
+    }else if(line.includes('AttributeError')||line.includes('ImportError')){
+        setStatus('K230 firmware is missing pose training-stream support — update apps/pose_classifier/pose_classifier.py on the board.');
+    }
+}
+
+function loadK230PoseCameraFrame(b64){
+    if(!b64||!k230PoseRunning) return;
+    try{
+        const binary=atob(b64);
+        const bytes=new Uint8Array(binary.length);
+        for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+        const url=URL.createObjectURL(new Blob([bytes],{type:'image/jpeg'}));
+        const image=new Image();
+        const imageSeq=++k230PoseImageSeq;
+        image.onload=()=>{
+            if(!k230PoseRunning||imageSeq!==k230PoseImageSeq){URL.revokeObjectURL(url);return;}
+            const oldUrl=k230PoseCameraUrl;
+            k230PoseCameraImage=image;
+            k230PoseCameraUrl=url;
+            if(oldUrl) URL.revokeObjectURL(oldUrl);
+            drawK230PoseFrame(k230PoseLatest);
+        };
+        image.onerror=()=>URL.revokeObjectURL(url);
+        image.src=url;
+    }catch(error){console.warn('Bad K230 camera frame:',error);}
+}
+
+function drawK230PoseFrame(payload=null){
+    const canvas=k230PosePreviewMode
+        ? document.getElementById('previewCanvas')
+        : document.getElementById(`cam-canvas-${camOpenIdx}`);
+    if(!canvas) return;
+    const ctx=canvas.getContext('2d');
+    const W=canvas.width,H=canvas.height;
+    if(k230PoseCameraImage&&k230PoseCameraImage.complete){
+        ctx.drawImage(k230PoseCameraImage,0,0,W,H);
+    }else{
+        ctx.fillStyle='#07111f';ctx.fillRect(0,0,W,H);
+        ctx.strokeStyle='rgba(56,189,248,.10)';ctx.lineWidth=1;
+        for(let x=0;x<W;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+        for(let y=0;y<H;y+=24){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    }
+    const color=k230PosePreviewMode?'#38bdf8':(classes[camOpenIdx]?.color||'#38bdf8');
+    if(payload&&payload.keypoints){
+        drawSkeletonOnCanvas(ctx,payload.keypoints,W,H,W/(payload.width||320),H/(payload.height||320),color);
+    }
+    ctx.fillStyle='rgba(0,0,0,.60)';ctx.fillRect(0,0,W,24);
+    ctx.fillStyle='#7dd3fc';ctx.font='bold 11px system-ui';
+    ctx.fillText(payload
+        ? `K230 YOLO LIVE · ${payload.exact?'exact hips':'estimated hips'}`
+        : 'K230 CAMERA LIVE · waiting for pose',8,16);
+
+    if(k230PosePreviewMode&&_previewScores){
+        const best=_previewScores.reduce((a,b)=>a.score>b.score?a:b);
+        if(best.score>=THRESHOLD){
+            ctx.fillStyle='rgba(0,0,0,.65)';ctx.fillRect(0,H-30,W,30);
+            ctx.fillStyle=classes.find(c=>c.name===best.name)?.color||'#38bdf8';
+            ctx.font='bold 15px system-ui';
+            ctx.fillText(`${best.name}  ${(best.score*100).toFixed(0)}%`,10,H-9);
+        }
+    }
+}
+
+async function classifyK230PosePreview(payload){
+    if(k230PoseInferBusy||!livePreviewActive||!classifier) return;
+    k230PoseInferBusy=true;
+    try{
+        const input=tf.tensor2d([Array.from(payload.features)]);
+        const output=classifier.predict(input);
+        const values=await output.data();
+        input.dispose();output.dispose();
+        if(!livePreviewActive) return;
+        _previewScores=classes.map((cls,i)=>({name:cls.name,score:values[i]}));
+        updateOutputBars(_previewScores);
+        drawK230PoseFrame(payload);
+    }finally{k230PoseInferBusy=false;}
+}
+
+async function stopK230PoseStream(updateUi=true){
+    const activePort=k230PosePort;
+    if(activePort)lastK230PosePort=activePort;
+    const activeReader=k230PoseReader;
+    const wasPreview=k230PosePreviewMode;
+    k230PoseRunning=false;
+    k230PosePort=null;
+    k230PoseReader=null;
+    k230PosePreviewMode=false;
+    k230PoseLatest=null;
+    k230PoseLineBuf='';
+    k230PoseCameraImage=null;
+    k230PoseImageSeq++;
+    if(k230PoseCameraUrl){URL.revokeObjectURL(k230PoseCameraUrl);k230PoseCameraUrl=null;}
+    try{if(activeReader) await activeReader.cancel();}catch{}
+    await k230PoseDelay(60);
+    if(activePort){
+        try{
+            const writer=activePort.writable.getWriter();
+            await writer.write(new Uint8Array([0x03,0x02]));
+            writer.releaseLock();
+        }catch{}
+        try{await activePort.close();}catch{}
+    }
+    if(updateUi){
+        if(wasPreview){
+            livePreviewActive=false;
+            document.getElementById('previewPlaceholder').style.display='flex';
+            document.getElementById('testBtn').disabled=!trained;
+            document.getElementById('stopBtn').disabled=true;
+            resetDetectStatus();
+        }else{
+            camOpenIdx=null;camSourceType=null;render();
+        }
+        setStatus('K230 YOLO camera stopped.');
+    }
+}
+
+async function animateCamCanvas(classIdx){
+    const canvas = document.getElementById(`cam-canvas-${classIdx}`);
+    if(!canvas || camOpenIdx !== classIdx) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+
+    ctx.save(); ctx.scale(-1,1); ctx.drawImage(camVideoEl,-W,0,W,H); ctx.restore();
+
+    if(window._lastLivePose){
+        const scaleX = W / camVideoEl.width;
+        const scaleY = H / camVideoEl.height;
+        const mirroredKps = window._lastLivePose.keypoints.map(kp => ({
+            ...kp,
+            x: camVideoEl.width - kp.x
+        }));
+        drawSkeletonOnCanvas(ctx, mirroredKps, W, H, scaleX, scaleY, classes[classIdx]?.color||'#0ea5e9');
+    }
+
+    camAnimFrame = requestAnimationFrame(()=>animateCamCanvas(classIdx));
+}
+
+let _poseLoopRunning = false;
+async function startPoseLoop(){
+    if(_poseLoopRunning) return;
+    _poseLoopRunning = true;
+    while(camOpenIdx !== null && camVideoEl){
+        try{
+            const poses = await moveNet.estimatePoses(camVideoEl, {flipHorizontal:true});
+            if(poses && poses.length > 0) window._lastLivePose = poses[0];
+        }catch(e){}
+        await new Promise(r=>setTimeout(r,150));
+    }
+    _poseLoopRunning = false;
+}
+
+function stopCamCapture(){
+    clearInterval(holdTimer); holdTimer=null;
+    if(camAnimFrame){cancelAnimationFrame(camAnimFrame);camAnimFrame=null;}
+    if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
+    if(camSourceType === 'esp32') esp32Disconnect();
+    if(camSourceType === 'k230-yolo') stopK230PoseStream(false);
+    camVideoEl=null; camOpenIdx=null; isCapturing=false; camSourceType=null;
+    render();
+    setStatus('Camera stopped.');
+}
+
+function startHoldRecord(classIdx){
+    captureOneSample(classIdx);
+    holdTimer = setInterval(()=>captureOneSample(classIdx), 400);
+}
+function stopHoldRecord(){
+    clearInterval(holdTimer); holdTimer=null;
+}
+
+function captureK230PoseSample(classIdx){
+    if(camSourceType!=='k230-yolo'||camOpenIdx!==classIdx) return;
+    if(!k230PoseLatest){
+        setStatus('Waiting for a valid K230 YOLO pose — show your shoulders to the camera.');
+        return;
+    }
+    if(!k230PoseCameraImage||!k230PoseCameraImage.naturalWidth){
+        setStatus('Waiting for the K230 camera image before capturing this sample.');
+        return;
+    }
+    if(k230PoseCapturedSeq===k230PoseFrameSeq) return; // never duplicate one board frame
+
+    const payload=k230PoseLatest;
+    const cls=classes[classIdx];
+    const datasetIdx=dataset.length;
+    dataset.push({xs:new Float32Array(payload.features),label:classIdx,source:'k230-yolo'});
+    classCounts[cls.name]=(classCounts[cls.name]||0)+1;
+    const count=classCounts[cls.name];
+
+    if(!thumbnailStore[classIdx]) thumbnailStore[classIdx]=[];
+    if(!thumbnailDatasetIdx[classIdx]) thumbnailDatasetIdx[classIdx]=[];
+    const thumb=document.createElement('canvas');thumb.width=64;thumb.height=64;
+    const ctx=thumb.getContext('2d');
+    // The classifier still trains on payload.features. Camera pixels are
+    // copied only for the user-visible sample thumbnail.
+    ctx.drawImage(k230PoseCameraImage,0,0,64,64);
+    drawSkeletonOnCanvas(
+        ctx,payload.keypoints,64,64,
+        64/(payload.width||320),64/(payload.height||320),cls.color
+    );
+    thumbnailStore[classIdx].push(ctx.getImageData(0,0,64,64));
+    thumbnailDatasetIdx[classIdx].push(datasetIdx);
+    k230PoseCapturedSeq=k230PoseFrameSeq;
+
+    trained=false;classNamesCopy=[];updateButtons();
+    render();
+    setStatus(`✓ K230 YOLO sample ${count} for “${cls.name}” (${payload.exact?'exact':'estimated'} hips)`);
+}
+
+async function captureOneSample(classIdx){
+    if(camSourceType==='k230-yolo'){
+        captureK230PoseSample(classIdx);
+        return;
+    }
+    if(!moveNet || camOpenIdx !== classIdx || !camVideoEl) return;
+    isCapturing = true;
+
+    try{
+        const poses = await moveNet.estimatePoses(camVideoEl, {
+            flipHorizontal: true
+        });
+
+        if(!poses || poses.length === 0){
+            setStatus('⚠️ No person detected — make sure your body is visible.');
+            return;
+        }
+        const pose = poses[0];
+
+        const avgScore = pose.keypoints.reduce((s,k)=>s+k.score,0) / pose.keypoints.length;
+        if(avgScore < MIN_POSE_CONF){
+            setStatus('⚠️ Pose confidence too low — make sure your body is visible.');
+            return;
+        }
+
+        const features = keypointsToFeatures(pose.keypoints, camVideoEl.width, camVideoEl.height);
+        const cls = classes[classIdx];
+
+        const datasetIdx = dataset.length;
+        dataset.push({xs: features, label: classIdx});
+        trained=false; classNamesCopy=[]; updateButtons();
+        classCounts[cls.name] = (classCounts[cls.name]||0) + 1;
+        const count = classCounts[cls.name];
+
+        if(!thumbnailStore[classIdx]) thumbnailStore[classIdx] = [];
+        if(!thumbnailDatasetIdx[classIdx]) thumbnailDatasetIdx[classIdx] = [];
+        const thumbIdx = thumbnailStore[classIdx].length;
+
+        const thumbCv = document.createElement('canvas'); thumbCv.width=64; thumbCv.height=64;
+        const thumbCtx = thumbCv.getContext('2d');
+        thumbCtx.save(); thumbCtx.scale(-1,1); thumbCtx.drawImage(camVideoEl,-64,0,64,64); thumbCtx.restore();
+        drawPoseThumb(thumbCv, pose.keypoints, cls.color);
+        const imageData = thumbCtx.getImageData(0,0,64,64);
+        thumbnailStore[classIdx].push(imageData);
+        thumbnailDatasetIdx[classIdx].push(datasetIdx);
+
+        const countEl = document.getElementById(`count-${classIdx}`);
+        if(countEl) countEl.textContent = count + ' sample' + (count!==1?'s':'');
+
+        let grid = document.getElementById(`thumbs-${classIdx}`);
+        if(grid){
+            if(grid.classList.contains('no-samples-hint')){
+                const newGrid = document.createElement('div');
+                newGrid.className = 'samples-grid';
+                newGrid.id = `thumbs-${classIdx}`;
+                grid.parentNode.replaceChild(newGrid, grid);
+                grid = newGrid;
+            }
+            const wrap = document.createElement('div'); wrap.className='thumb-wrap';
+            const cv = document.createElement('canvas'); cv.width=64; cv.height=64;
+            const ctx2 = cv.getContext('2d'); ctx2.putImageData(imageData, 0, 0);
+            const del = document.createElement('button'); del.className='thumb-del';
+            del.textContent='×';
+            del.onclick=(()=>{
+                const ci=classIdx, si=thumbIdx, di=datasetIdx;
+                return ()=>{
+                    dataset.splice(di,1);
+                    Object.keys(thumbnailDatasetIdx).forEach(k=>{
+                        thumbnailDatasetIdx[k]=thumbnailDatasetIdx[k].map(x=>x>di?x-1:x);
+                    });
+                    thumbnailStore[ci].splice(si,1);
+                    thumbnailDatasetIdx[ci].splice(si,1);
+                    classCounts[classes[ci].name]=Math.max(0,(classCounts[classes[ci].name]||1)-1);
+                    const cEl=document.getElementById(`count-${ci}`);
+                    if(cEl)cEl.textContent=classCounts[classes[ci].name]+' samples';
+                    wrap.remove(); renderStats();
+                };
+            })();
+            wrap.appendChild(cv); wrap.appendChild(del);
+            grid.appendChild(wrap);
+        }
+
+        renderStats();
+        setStatus(`✓ Captured sample ${count} for "${cls.name}" (conf: ${(avgScore*100).toFixed(0)}%)`);
+
+    }catch(e){
+        setStatus('Capture error: '+e.message);
+        console.error(e);
+    }finally{
+        isCapturing=false;
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// RENDER
+// ──────────────────────────────────────────────────────────────
+function render(){renderClasses();renderStats();initOutputBars();}
+
+function renderClasses(){
+    const container = document.getElementById('classList');
+    container.innerHTML='';
+    classes.forEach((cls,idx)=>{
+        const card = document.createElement('div');
+        card.className='class-card';
+        const count = classCounts[cls.name]||0;
+        const isCamOpen = camOpenIdx === idx;
+        const isEsp32Open = isCamOpen && camSourceType === 'esp32';
+        const isK230Open = isCamOpen && camSourceType === 'k230-yolo';
+
+        card.innerHTML=`
+            <div class="class-header">
+                <input class="class-name" style="color:${cls.color}" value="${cls.name}"
+                    onchange="renameClass(${idx},this.value)"
+                    oninput="renameClass(${idx},this.value)"/>
+                <span class="sample-count-badge" id="count-${idx}">
+                    ${count} sample${count!==1?'s':''}
+                </span>
+                <button class="remove-btn" onclick="removeClass(${idx})" title="Remove class">×</button>
+            </div>
+
+            <div class="card-body">
+
+                <div class="cam-panel">
+                    ${isCamOpen ? (isEsp32Open ? `
+                    <div class="cam-canvas-box">
+                        <canvas id="cam-canvas-${idx}" width="320" height="240"></canvas>
+                    </div>
+                    <div class="esp32-view-note">
+                        🔌 ESP32-S3 USB — live view only (96×96). Use <b>Webcam</b> to capture samples.
+                    </div>
+                    <div class="cam-btn-row">
+                        <button class="stop-cam-btn" style="flex:1" onclick="stopCamCapture()">Stop</button>
+                    </div>
+                    ` : isK230Open ? `
+                    <div class="cam-canvas-box">
+                        <canvas id="cam-canvas-${idx}" width="320" height="240"></canvas>
+                    </div>
+                    <div class="k230-pose-note">
+                        K230 YOLOv8 Pose · select another pose’s <b>Use Connected K230</b> button to continue without reconnecting.
+                    </div>
+                    <div class="cam-btn-row">
+                        <button class="hold-btn" style="background:${cls.color}"
+                            onmousedown="startHoldRecord(${idx})" onmouseup="stopHoldRecord()"
+                            onmouseleave="stopHoldRecord()"
+                            ontouchstart="startHoldRecord(${idx})" ontouchend="stopHoldRecord()">
+                            Hold to Capture
+                        </button>
+                        <button class="stop-cam-btn" onclick="stopCamCapture()">Disconnect</button>
+                    </div>
+                    ` : `
+                    <div class="cam-canvas-box">
+                        <canvas id="cam-canvas-${idx}" width="320" height="240"></canvas>
+                    </div>
+                    <div class="cam-crop-label">
+                        📐 Dashed box = capture area &nbsp;·&nbsp; <b>320×240px</b> crop
+                    </div>
+                    <div class="cam-btn-row">
+                        <button class="hold-btn" style="background:${cls.color}"
+                            onmousedown="startHoldRecord(${idx})" onmouseup="stopHoldRecord()"
+                            onmouseleave="stopHoldRecord()"
+                            ontouchstart="startHoldRecord(${idx})" ontouchend="stopHoldRecord()">
+                            Hold to Capture
+                        </button>
+                        <button class="stop-cam-btn" onclick="stopCamCapture()">Stop</button>
+                    </div>
+                    `) : `
+                    <div class="cam-canvas-box">
+                        <div class="cam-canvas-placeholder">
+                            <div class="ph-icon">📷</div>
+                            <div>Click <b>${FEATURE_EXTRACTOR==='k230-yolo'?'K230 YOLO':'Webcam'}</b> to start camera</div>
+                        </div>
+                    </div>
+                    <div class="open-cam-row">
+                        <button class="open-cam-btn"
+                            onclick="${FEATURE_EXTRACTOR==='k230-yolo'?`openK230PoseCapture(${idx})`:`openCamCapture(${idx})`}"
+                            ${FEATURE_EXTRACTOR==='movenet'&&!moveNet?'disabled':''}>
+                            ${FEATURE_EXTRACTOR==='k230-yolo'
+                                ? (k230PoseRunning?'↪ Use Connected K230':'🔌 K230 YOLO Camera')
+                                : 'Webcam (MoveNet)'}
+                        </button>
+                    </div>
+                    `}
+                </div>
+
+                ${count > 0 ? `
+                <div class="samples-panel">
+                    <div class="samples-header">${count} Pose Sample${count!==1?'s':''}</div>
+                    <div class="samples-grid" id="thumbs-${idx}"></div>
+                </div>` : `
+                <div class="samples-panel">
+                    <div class="no-samples-hint" id="thumbs-${idx}">
+                        <div style="font-size:28px">🧘</div>
+                        <div>Hold the button to capture poses</div>
+                    </div>
+                </div>`}
+
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    classes.forEach((cls,idx)=>{
+        const grid = document.getElementById(`thumbs-${idx}`);
+        if(!grid) return;
+        const stored = thumbnailStore[idx];
+        if(!stored || !stored.length) return;
+        if(grid.classList.contains('no-samples-hint')){
+            grid.className = 'samples-grid';
+            grid.innerHTML = '';
+        }
+        stored.forEach((canvasData, si)=>{
+            const wrap = document.createElement('div'); wrap.className='thumb-wrap';
+            const cv = document.createElement('canvas'); cv.width=64; cv.height=64;
+            const ctx2 = cv.getContext('2d'); ctx2.putImageData(canvasData, 0, 0);
+            const del = document.createElement('button'); del.className='thumb-del';
+            del.textContent='×';
+            del.onclick=()=>{
+                const globalIdx = thumbnailDatasetIdx[idx][si];
+                if(globalIdx !== undefined){
+                    dataset.splice(globalIdx,1);
+                    Object.keys(thumbnailDatasetIdx).forEach(ci=>{
+                        thumbnailDatasetIdx[ci] = thumbnailDatasetIdx[ci].map(di=>di>globalIdx?di-1:di);
+                    });
+                }
+                thumbnailStore[idx].splice(si,1);
+                thumbnailDatasetIdx[idx].splice(si,1);
+                classCounts[cls.name]=Math.max(0,(classCounts[cls.name]||1)-1);
+                renderStats();
+                render();
+            };
+            wrap.appendChild(cv); wrap.appendChild(del);
+            grid.appendChild(wrap);
+        });
+    });
+}
+
+function renderStats(){
+    document.getElementById('statsList').innerHTML=classes.map(cls=>`
+        <div class="stat-row">
+            <div class="stat-dot" style="background:${cls.color}"></div>
+            <span class="stat-name">${cls.name}</span>
+            <span class="stat-count">${classCounts[cls.name]||0} samples</span>
+        </div>`).join('');
+}
+
+// ──────────────────────────────────────────────────────────────
+// CLASS MANAGEMENT
+// ──────────────────────────────────────────────────────────────
+function addClass(){
+    const id = nextClassId++;
+    const cls = {id, name:`Pose${id}`, color:colorForId(id)};
+    classes.push(cls);
+    classCounts[cls.name]=0;
+    // The trained classifier's output layer is sized to the OLD class
+    // count — deploying it now would ship a model that can never predict
+    // the new pose. Force a retrain.
+    trained=false; updateButtons();
+    render();
+}
+
+function removeClass(idx){
+    if(classes.length<=2){alert('Need at least 2 classes');return;}
+    const cls = classes[idx];
+    for(let i=dataset.length-1;i>=0;i--){if(dataset[i].label===idx)dataset.splice(i,1);}
+    dataset.forEach(s=>{if(s.label>idx)s.label--;});
+    delete classCounts[cls.name];
+
+    // Re-key thumbnail stores to stay aligned with the classes array
+    // after splice — mirrors the dataset label shift above. Without
+    // this, every class after the removed one shows/deletes the
+    // wrong thumbnails (and wrong underlying samples).
+    const newThumbnailStore = {};
+    const newThumbnailDatasetIdx = {};
+    Object.keys(thumbnailStore).forEach(k=>{
+        const ci = Number(k);
+        if(ci === idx) return;
+        newThumbnailStore[ci > idx ? ci - 1 : ci] = thumbnailStore[ci];
+    });
+    Object.keys(thumbnailDatasetIdx).forEach(k=>{
+        const ci = Number(k);
+        if(ci === idx) return;
+        newThumbnailDatasetIdx[ci > idx ? ci - 1 : ci] = thumbnailDatasetIdx[ci];
+    });
+    thumbnailStore = newThumbnailStore;
+    thumbnailDatasetIdx = newThumbnailDatasetIdx;
+
+    classes.splice(idx,1);
+    trained=false; updateButtons();
+    render();
+}
+
+function renameClass(idx,newName){
+    const cls=classes[idx];
+    const oldName=cls.name;
+    if(classCounts[oldName]!==undefined){
+        classCounts[newName]=classCounts[oldName];
+        delete classCounts[oldName];
+    }
+    cls.name=newName;
+    renderStats();
+    const lEl=document.getElementById(`output-label-${idx}`);
+    if(lEl){lEl.textContent=newName;lEl.style.color=cls.color;}
+}
+
+// ──────────────────────────────────────────────────────────────
+// OUTPUT BARS
+// ──────────────────────────────────────────────────────────────
+function initOutputBars(){
+    document.getElementById('outputBars').innerHTML=classes.map((cls,i)=>`
+        <div class="output-row" id="output-row-${i}">
+            <span class="output-label" style="color:${cls.color}"
+                id="output-label-${i}">${cls.name}</span>
+            <div class="output-bar-wrap">
+                <div class="output-bar-fill" id="output-bar-${i}"
+                    style="width:0%;background:${cls.color}">
+                    <span class="output-bar-pct" id="output-pct-${i}"></span>
+                </div>
+                <span class="output-bar-pct-outside" id="output-pct-out-${i}">0%</span>
+            </div>
+        </div>`).join('');
+}
+
+function updateOutputBars(scores){
+    const best = scores.reduce((a,b)=>a.score>b.score?a:b);
+    const isAbove = best.score >= THRESHOLD;
+
+    scores.forEach((s,i)=>{
+        const pct=Math.round(s.score*100);
+        const cls=classes[i];
+        const color=cls?.color||colorForId(i+1);
+        const bEl=document.getElementById(`output-bar-${i}`);
+        const pEl=document.getElementById(`output-pct-${i}`);
+        const oEl=document.getElementById(`output-pct-out-${i}`);
+        const lEl=document.getElementById(`output-label-${i}`);
+        if(!bEl)return;
+        bEl.style.width=pct+'%'; bEl.style.background=color;
+        if(pct>20){pEl.textContent=pct+'%';oEl.textContent='';}
+        else{pEl.textContent='';oEl.textContent=pct+'%';}
+        if(lEl){lEl.textContent=s.name;lEl.style.color=color;}
+    });
+    updateDetectStatus(best, isAbove);
+}
+
+function updateDetectStatus(best, isDetected){
+    const el=document.getElementById('detectStatus');
+    const pct=(best.score*100).toFixed(1);
+    const cls=classes.find(c=>c.name===best.name);
+    const color=cls?.color||'#0ea5e9';
+    if(isDetected){
+        el.style.background=color+'14'; el.style.borderBottom=`2px solid ${color}30`;
+        el.innerHTML=`<div style="width:36px;height:36px;border-radius:50%;background:${color};
+            display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🧘</div>
+            <div style="flex:1;min-width:0">
+                <div style="font-size:15px;font-weight:800;color:${color};white-space:nowrap;
+                    overflow:hidden;text-overflow:ellipsis">${best.name}</div>
+                <div style="font-size:11px;color:#64748b;margin-top:1px">
+                    Detected ✓ ${pct}% confidence</div>
+            </div>
+            <div style="font-size:22px;font-weight:900;color:${color};flex-shrink:0">
+                ${Math.round(best.score*100)}%</div>`;
+    }else{
+        el.style.background='#fafafa'; el.style.borderBottom='1px solid #f1f5f9';
+        el.innerHTML=`<div style="width:36px;height:36px;border-radius:50%;background:#f1f5f9;
+            display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🧘</div>
+            <div style="flex:1">
+                <div style="font-size:14px;font-weight:700;color:#94a3b8">Listening...</div>
+                <div style="font-size:11px;color:#cbd5e1;margin-top:1px">
+                    Best: ${best.name} at ${pct}%
+                    (need ${Math.round(THRESHOLD*100)}%)</div>
+            </div>`;
+    }
+}
+
+function resetDetectStatus(){
+    const el=document.getElementById('detectStatus');
+    el.style.background='#fafafa'; el.style.borderBottom='1px solid #f1f5f9';
+    el.innerHTML=`<div style="width:36px;height:36px;border-radius:50%;background:#f1f5f9;
+        display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🧘</div>
+        <div><div style="font-size:13px;font-weight:700;color:#94a3b8">Not Detected</div>
+        <div style="font-size:11px;color:#cbd5e1;margin-top:1px">Train model and start camera</div></div>`;
+    classes.forEach((_,i)=>{
+        const b=document.getElementById(`output-bar-${i}`);
+        const p=document.getElementById(`output-pct-${i}`);
+        const o=document.getElementById(`output-pct-out-${i}`);
+        if(b)b.style.width='0%';if(p)p.textContent='';if(o)o.textContent='0%';
+    });
+}
+
+// ──────────────────────────────────────────────────────────────
+// TRAIN  — builds a dense classifier on top of MoveNet keypoints
+// ──────────────────────────────────────────────────────────────
+function setTrainState(html){document.getElementById('trainStateBox').innerHTML=html;}
+
+function buildPoseStratifiedSplit(samples,numClasses,validationFraction=0.1){
+    const byClass=Array.from({length:numClasses},()=>[]);
+    samples.forEach((sample,index)=>{
+        if(sample.label>=0&&sample.label<numClasses) byClass[sample.label].push(index);
+    });
+
+    const shuffleInPlace=values=>{
+        for(let i=values.length-1;i>0;i--){
+            const j=Math.floor(Math.random()*(i+1));
+            [values[i],values[j]]=[values[j],values[i]];
+        }
+    };
+
+    const trainIndices=[];
+    const validationIndices=[];
+    byClass.forEach((indices,classIndex)=>{
+        if(indices.length<2){
+            throw new Error(`Pose “${classes[classIndex]?.name||classIndex+1}” needs at least 2 samples.`);
+        }
+        shuffleInPlace(indices);
+        const validationCount=Math.min(
+            indices.length-1,
+            Math.max(1,Math.round(indices.length*validationFraction))
+        );
+        const trainingCount=indices.length-validationCount;
+        trainIndices.push(...indices.slice(0,trainingCount));
+        validationIndices.push(...indices.slice(trainingCount));
+    });
+    shuffleInPlace(trainIndices);
+    shuffleInPlace(validationIndices);
+    return{trainIndices,validationIndices};
+}
+
+async function trainModel(){
+    if(FEATURE_EXTRACTOR==='movenet'&&!moveNet){alert('MoveNet not loaded yet.');return;}
+    const minSamples = Math.min(...classes.map(c=>classCounts[c.name]||0));
+    if(minSamples < 5){
+        alert(`Need at least 5 samples per class. Some classes have fewer.`);return;
+    }
+
+    document.getElementById('trainBtn').disabled=true;
+    trained=false; updateButtons();
+
+    const showProgress=(pct,msg)=>{
+        setTrainState(`<div class="state-progress">
+            <div class="progress-pct">${pct}%</div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+            <div class="progress-label">${msg}</div>
+        </div>`);
+        setStatus(msg);
+    };
+
+    try{
+        showProgress(5,'Preparing keypoint dataset...');
+        await tf.nextFrame();
+
+        const numClasses = classes.length;
+        const total = dataset.length;
+
+        const xsArr = dataset.map(s=>Array.from(s.xs));
+        const ysArr = dataset.map(s=>{
+            const one = new Array(numClasses).fill(0);
+            one[s.label]=1; return one;
+        });
+        const {trainIndices,validationIndices}=buildPoseStratifiedSplit(
+            dataset,numClasses,0.1
+        );
+        const xs=tf.tensor2d(trainIndices.map(i=>xsArr[i]));
+        const ys=tf.tensor2d(trainIndices.map(i=>ysArr[i]));
+        const validationXs=tf.tensor2d(validationIndices.map(i=>xsArr[i]));
+        const validationYs=tf.tensor2d(validationIndices.map(i=>ysArr[i]));
+
+        showProgress(15,'Building classifier...');
+        await tf.nextFrame();
+
+        classifier = tf.sequential({
+            layers:[
+                tf.layers.dense({inputShape:[NUM_KEYPOINTS*2], units:128, activation:'relu',
+                    kernelInitializer:'glorotUniform'}),
+                tf.layers.dropout({rate:0.3}),
+                tf.layers.dense({units:64, activation:'relu'}),
+                tf.layers.dropout({rate:0.2}),
+                tf.layers.dense({units:numClasses, activation:'softmax'})
+            ]
+        });
+
+        classifier.compile({
+            optimizer: tf.train.adam(0.001),
+            loss: 'categoricalCrossentropy',
+            metrics: ['accuracy']
+        });
+
+        showProgress(20,`Training ${trainIndices.length}, validating ${validationIndices.length}...`);
+
+        const EPOCHS = 80;
+        try{
+            await classifier.fit(xs, ys, {
+                epochs: EPOCHS,
+                batchSize: 16,
+                validationData:[validationXs,validationYs],
+                shuffle: true,
+                callbacks:{
+                    onEpochEnd: async(epoch, logs)=>{
+                        const pct = 20 + Math.round(((epoch+1)/EPOCHS)*75);
+                        const acc = logs?.acc!=null?` acc:${(logs.acc*100).toFixed(0)}%`:'';
+                        const val = logs?.val_acc!=null?` val:${(logs.val_acc*100).toFixed(0)}%`:'';
+                        showProgress(pct, `Epoch ${epoch+1}/${EPOCHS}${acc}${val}`);
+                        await tf.nextFrame();
+                    }
+                }
+            });
+        }finally{
+            xs.dispose();ys.dispose();validationXs.dispose();validationYs.dispose();
+        }
+
+        classNamesCopy = classes.map(c=>c.name);
+        trained = true;
+
+        showProgress(100,'Training complete!');
+        setStatus(`✅ Pose model trained! ${total} samples · ${numClasses} classes. Start camera to preview.`);
+
+        setTrainState(`<div class="state-done">
+            <div class="icon">✅</div>
+            <h3>Model Trained!</h3>
+            <p>${total} samples · ${numClasses} classes</p>
+            <p style="font-size:11px;margin-top:4px;font-weight:700;
+                background:linear-gradient(135deg,#0ea5e9,#10b981);
+                -webkit-background-clip:text;-webkit-text-fill-color:transparent">
+                MoveNet + Dense Classifier
+            </p>
+            <button class="retrain-btn" onclick="resetTrain()">Retrain</button>
+        </div>`);
+
+        initOutputBars();
+        updateButtons();
+
+    }catch(e){
+        console.error('Training error:',e);
+        alert('Training Failed: '+e.message);
+        setStatus('Training failed: '+e.message);
+        setTrainState(`<div class="state-ready"><div class="icon">🧘</div>
+            <h3>Ready to train.</h3>
+            <p>Add at least 20 samples per pose<br>then press Train.</p></div>`);
+    }finally{
+        document.getElementById('trainBtn').disabled=false;
+    }
+}
+
+function resetTrain(){
+    trained=false; classNamesCopy=[]; updateButtons();
+    if(classifier){classifier.dispose();classifier=null;}
+    setTrainState(`<div class="state-ready"><div class="icon">🧘</div>
+        <h3>Ready to train.</h3>
+        <p>Add at least 20 samples per pose<br>then press Train.</p></div>`);
+    setStatus('');
+    initOutputBars();
+    resetDetectStatus();
+}
+
+// ──────────────────────────────────────────────────────────────
+// LIVE PREVIEW  — two loops:
+//   1. drawLoop  — rAF 60fps, draws video + cached skeleton
+//   2. poseLoop  — throttled async inference every ~100ms
+// ──────────────────────────────────────────────────────────────
+let _previewPose    = null;
+let _previewScores  = null;
+let _previewCanvas  = null;
+let _previewCtx     = null;
+let _drawFrameId    = null;
+let _poseTimerId    = null;
+
+async function startLivePreview(){
+    if(livePreviewActive) return;
+    if(!trained||!classifier){alert('Train the model first!');return;}
+
+    if(FEATURE_EXTRACTOR==='k230-yolo'){
+        await startK230PoseStream(null,true);
+        return;
+    }
+
+    try{
+        previewStream = await navigator.mediaDevices.getUserMedia({
+            video:{width:320, height:240, facingMode:'user'}, audio:false
+        });
+        previewVideo = document.createElement('video');
+        previewVideo.srcObject = previewStream;
+        previewVideo.width  = 320;
+        previewVideo.height = 240;
+        previewVideo.playsInline = true;
+        await previewVideo.play();
+
+        _previewCanvas = document.getElementById('previewCanvas');
+        _previewCanvas.width  = 320;
+        _previewCanvas.height = 240;
+        _previewCtx = _previewCanvas.getContext('2d');
+
+        document.getElementById('previewPlaceholder').style.display = 'none';
+        document.getElementById('testBtn').disabled  = true;
+        document.getElementById('stopBtn').disabled  = false;
+        document.getElementById('stopBtn').textContent = '■ Stop';
+
+        livePreviewActive = true;
+        _previewPose   = null;
+        _previewScores = null;
+
+        _drawLoop();
+        _startPoseInferLoop();
+
+        setStatus('📷 Live preview running — detecting poses');
+
+    }catch(e){
+        alert('Camera error: ' + e.message);
+        stopLivePreview();
+    }
+}
+
+function _drawLoop(){
+    if(!livePreviewActive){ _drawFrameId=null; return; }
+    _drawFrameId = requestAnimationFrame(_drawLoop);
+
+    const cv  = _previewCanvas;
+    const ctx = _previewCtx;
+    const VW  = cv.width, VH = cv.height;
+
+    ctx.save();
+    ctx.scale(-1,1);
+    ctx.drawImage(previewVideo, -VW, 0, VW, VH);
+    ctx.restore();
+
+    if(_previewPose){
+        const mirroredKps = _previewPose.keypoints.map(kp => ({
+            ...kp,
+            x: previewVideo.width - kp.x
+        }));
+        drawSkeletonOnCanvas(ctx, mirroredKps, VW, VH, 1, 1, '#0ea5e9');
+    }
+
+    if(_previewScores){
+        const best = _previewScores.reduce((a,b)=>a.score>b.score?a:b);
+        if(best.score >= THRESHOLD){
+            const cls   = classes.find(c=>c.name===best.name);
+            const color = cls?.color||'#0ea5e9';
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.fillRect(0, VH-32, VW, 32);
+            ctx.fillStyle = color;
+            ctx.font = 'bold 15px system-ui';
+            ctx.fillText(`${best.name}  ${(best.score*100).toFixed(0)}%`, 10, VH-10);
+        }
+    }
+}
+
+async function _startPoseInferLoop(){
+    while(livePreviewActive){
+        try{
+            const poses = await moveNet.estimatePoses(previewVideo, {flipHorizontal:true});
+            if(!livePreviewActive) break;
+            if(poses && poses.length > 0){
+                const pose = poses[0];
+                _previewPose = pose;
+
+                const avgScore = pose.keypoints.reduce((s,k)=>s+k.score,0)/pose.keypoints.length;
+                if(avgScore > MIN_POSE_CONF && classifier){
+                    const features = keypointsToFeatures(pose.keypoints, previewVideo.width, previewVideo.height);
+                    const t = tf.tensor2d([Array.from(features)]);
+                    const p = classifier.predict(t);
+                    const arr = await p.data();
+                    t.dispose(); p.dispose();
+                    if(!livePreviewActive) break;
+                    _previewScores = classes.map((cls,i)=>({name:cls.name, score:arr[i]}));
+                    updateOutputBars(_previewScores);
+                }
+            }
+        }catch(e){
+            if(livePreviewActive) console.warn('Pose infer error:',e);
+        }
+        await new Promise(r=>{ _poseTimerId=setTimeout(r,80); });
+    }
+}
+
+function stopLivePreview(){
+    if(k230PoseRunning&&k230PosePreviewMode) stopK230PoseStream(false);
+    livePreviewActive = false;
+
+    if(_drawFrameId){ cancelAnimationFrame(_drawFrameId); _drawFrameId=null; }
+    if(_poseTimerId){ clearTimeout(_poseTimerId); _poseTimerId=null; }
+    if(previewStream){ previewStream.getTracks().forEach(t=>t.stop()); previewStream=null; }
+    previewVideo = null;
+    _previewPose = null; _previewScores = null;
+
+    if(_previewCtx && _previewCanvas){
+        _previewCtx.clearRect(0,0,_previewCanvas.width,_previewCanvas.height);
+    }
+
+    document.getElementById('previewPlaceholder').style.display = 'flex';
+    document.getElementById('testBtn').disabled  = !trained;
+    document.getElementById('stopBtn').disabled  = true;
+    document.getElementById('stopBtn').textContent = '■ Stop';
+
+    resetDetectStatus();
+    setStatus('Camera stopped.');
+}
+
+// ──────────────────────────────────────────────────────────────
+// RESET K230 / PAGE
+// ──────────────────────────────────────────────────────────────
+async function resetK230PoseBoard(){
+    if(!SERIAL_SUPPORTED){alert('Reset K230 requires desktop Chrome or Edge with WebSerial.');return;}
+    if(connected||document.querySelector('#deployK230Btn .spinner')){
+        alert('K230 deployment is still running. Wait for the USB transfer to finish, then reset the board.');return;
+    }
+    const btn=document.getElementById('resetK230Btn');
+    const original=btn?.innerHTML||'Reset K230 Board';
+    let resetPort=null,resetWriter=null;
+    try{
+        if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Resetting K230...';}
+        clearInterval(holdTimer);holdTimer=null;isCapturing=false;
+        if(k230PosePort)lastK230PosePort=k230PosePort;
+        if(k230PoseRunning)await stopK230PoseStream(true);
+
+        resetPort=lastK230PosePort;
+        if(!resetPort){
+            setStatus('Select the K230 USB serial port to reset the board.');
+            resetPort=await navigator.serial.requestPort();
+            lastK230PosePort=resetPort;
+        }
+        const baud=parseInt(document.getElementById('usbBaudSelect')?.value||'115200',10);
+        setStatus('Sending reset command to K230...');
+        try{await resetPort.open({baudRate:baud,bufferSize:32768});}
+        catch(openError){
+            if(resetPort===lastK230PosePort)lastK230PosePort=null;
+            throw new Error('Could not open the K230 port. Reconnect the board and click reset again. '+openError.message);
+        }
+        resetWriter=resetPort.writable.getWriter();
+        await resetWriter.write(new Uint8Array([0x03,0x03,0x03]));
+        await sleep(350);
+        await resetWriter.write(new Uint8Array([0x01]));
+        await sleep(350);
+        await resetWriter.write(ENC.encode('import machine\r\nmachine.reset()'));
+        await resetWriter.write(new Uint8Array([0x04]));
+        await sleep(500);
+        setStatus('K230 reset command sent. Wait for the board to finish booting.');
+        alert('K230 reset command sent.\n\nWait about 5-10 seconds for the board to boot.');
+    }catch(e){
+        if(e.name==='NotFoundError')setStatus('K230 reset cancelled.');
+        else{
+            console.error('K230 reset error:',e);
+            setStatus('K230 reset failed: '+e.message);
+            alert('K230 Reset Failed:\n\n'+e.message+'\n\nMake sure no other application is using the COM port.');
+        }
+    }finally{
+        try{resetWriter&&resetWriter.releaseLock();}catch{}
+        try{resetPort&&await resetPort.close();}catch{}
+        if(btn){btn.disabled=false;btn.innerHTML=original;}
+    }
+}
+
+function resetPage(){
+    if(!confirm('Reset everything? This clears all samples and the model.'))return;
+    stopLivePreview(); stopCamCapture();
+    trained=false; classNamesCopy=[];
+    classes=[
+        {id:1,name:'Pose1',color:'#0ea5e9'},
+        {id:2,name:'Pose2',color:'#10b981'},
+    ];
+    nextClassId=3; classCounts={}; dataset=[];
+    thumbnailStore={}; thumbnailDatasetIdx={};
+    if(classifier){classifier.dispose();classifier=null;}
+    resetUsbPanel(); updateButtons();
+    setStatus('Page reset. Start fresh!');
+    setTrainState(`<div class="state-ready"><div class="icon">🧘</div>
+        <h3>Ready to train.</h3>
+        <p>Add at least 20 samples per pose<br>then press Train.</p></div>`);
+    render();
+}
+
+// ──────────────────────────────────────────────────────────────
+// DEPLOY TO BLOCKLY
+// ──────────────────────────────────────────────────────────────
+function deployToBlockly(){
+    if(!trained){alert('Train first!');return;}
+    const classNames = classes.map(c=>c.name);
+    const payload = JSON.stringify({type:'POSE_MODEL_TRAINED', classes:classNames});
+
+    // Persist so index.html can read it when user navigates back (standalone mode)
+    try { sessionStorage.setItem('curio_pose_trained', JSON.stringify(classNames)); } catch(e) {}
+
+    if(window.ReactNativeWebView){
+        window.ReactNativeWebView.postMessage(payload);
+    } else if(window.parent !== window){
+        window.parent.postMessage(payload,'*');
+        window.opener?.postMessage(payload,'*');
+    }
+
+    setStatus('✅ Pose blocks deployed! Classes: "'+classNames.join('", "')+'" — Click ← Workspace to use them.');
+    ['deployHeaderBtn','deployCardBtn'].forEach(id=>{
+        const btn=document.getElementById(id);if(!btn)return;
+        const orig=btn.textContent; btn.textContent='✓ Deployed!'; btn.style.background='#10b981';
+        setTimeout(()=>{btn.textContent=orig;btn.style.background='';},2500);
+    });
+}
+
+// ──────────────────────────────────────────────────────────────
+// DEPLOY TO K230
+// ──────────────────────────────────────────────────────────────
+function classifierMatchesClasses(){
+    // Last-line defense against deploying a stale model: the softmax
+    // layer must have exactly one unit per current class.
+    try{
+        const shape = classifier.outputs[0].shape;
+        return shape[shape.length-1] === classes.length;
+    }catch(_){ return false; }
+}
+
+async function deployToK230(){
+    if(!trained||!classifier){alert('Train first!');return;}
+    if(!classifierMatchesClasses()){
+        const shape = classifier.outputs[0].shape;
+        alert(`⚠️ Stale model!\n\nThe trained model has ${shape[shape.length-1]} outputs but you now have ${classes.length} poses.\n\nPress "Train Model" again, then deploy.`);
+        return;
+    }
+    const method = document.getElementById('deployMethodInput').value;
+    const btn = document.getElementById('deployK230Btn');
+    const originalText = btn.innerHTML;
+
+    let usbPort=null;
+    if(method==='usb'){
+        if(!SERIAL_SUPPORTED){alert('WebSerial requires Chrome / Edge v89+.');return;}
+        clearInterval(holdTimer);holdTimer=null;isCapturing=false;
+        if(k230PosePort)lastK230PosePort=k230PosePort;
+        if(k230PoseRunning)await stopK230PoseStream(true);
+        const baud=parseInt(document.getElementById('usbBaudSelect').value);
+        try{
+            const rememberedPort=lastK230PosePort;
+            usbPort=rememberedPort||await navigator.serial.requestPort();
+            try{
+                await usbPort.open({baudRate:baud,bufferSize:32768});
+            }catch(openError){
+                if(!rememberedPort)throw openError;
+                try{await usbPort.close();}catch{}
+                lastK230PosePort=null;usbPort=null;
+                setStatus('Remembered K230 port is unavailable. Select the board again...');
+                usbPort=await navigator.serial.requestPort();
+                await usbPort.open({baudRate:baud,bufferSize:32768});
+            }
+            lastK230PosePort=usbPort;
+        }catch(e){
+            alert('Could not open port: '+e.message);
+            try{usbPort&&await usbPort.close();}catch{}
+            return;
+        }
+    }
+
+    btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Deploying...';
+    setStatus('Saving model and compiling...');
+
+    try{
+        let savedArtifacts=null;
+        await classifier.save(
+            tf.io.withSaveHandler(async artifacts=>{
+                savedArtifacts=artifacts;
+                return{modelArtifactsInfo:{dateSaved:new Date()}};
+            })
+        );
+        if(!savedArtifacts)throw new Error('Failed to save model');
+
+        const modelJson={
+            modelTopology:savedArtifacts.modelTopology,
+            weightsManifest:[{paths:['weights.bin'],weights:savedArtifacts.weightSpecs}],
+            format:'layers-model',generatedBy:'TensorFlow.js',convertedBy:null
+        };
+        const formData=new FormData();
+        formData.append('model_json',
+            new Blob([JSON.stringify(modelJson)],{type:'application/json'}),'model.json');
+        formData.append('weights_bin',
+            new Blob([savedArtifacts.weightData],{type:'application/octet-stream'}),'weights.bin');
+        formData.append('labels',JSON.stringify(classes.map(c=>c.name)));
+
+        setStatus('Compiling on backend...');
+        const resp=await fetch(`${CONVERT_SERVER}/convert-pose`,{method:'POST',body:formData});
+        if(!resp.ok)throw new Error(`Server error ${resp.status}: ${await resp.text()}`);
+
+        setStatus('Unpacking compiled model...');
+        const zip=await JSZip.loadAsync(await resp.blob());
+        const kmodelFile=zip.file('model.kmodel'), labelsFile=zip.file('labels.txt');
+        if(!kmodelFile||!labelsFile)throw new Error('Invalid zip from server');
+        const kmodelBlob=await kmodelFile.async('blob');
+        const labelsBlob=await labelsFile.async('blob');
+
+        if(method==='wifi'){
+            const ip=document.getElementById('k230IpInput').value.trim()||'192.168.4.1';
+            const pt=document.getElementById('k230PortInput').value.trim()||'8080';
+            const url=`http://${ip}:${pt}/upload`;
+            setStatus(`Pushing to K230 via Wi-Fi (${ip})...`);
+            try{
+                const r1=await fetch(url,{method:'POST',
+                    headers:{'X-Filename':'pose_model.kmodel'},body:kmodelBlob});
+                if(!r1.ok)throw new Error(`HTTP ${r1.status}`);
+                await sleep(1500);
+                const r2=await fetch(url,{method:'POST',
+                    headers:{'X-Filename':'pose_labels.txt'},body:labelsBlob});
+                if(!r2.ok)throw new Error(`HTTP ${r2.status}`);
+            }catch(pushErr){
+                alert(`❌ Failed to connect to K230 at ${ip}:${pt}.\nError: ${pushErr.message}`);
+                setStatus('Deploy failed: K230 unreachable.');return;
+            }
+            setStatus('Wi-Fi deployment complete!');
+            alert(`✅ Pose model deployed via Wi-Fi!\nFiles saved to /sdcard/kmodel/`);
+
+        }else if(method==='usb'){
+            const baud=parseInt(document.getElementById('usbBaudSelect').value);
+            resetUsbPanel(); showUsbPanel(true);
+            port=usbPort; portReader=usbPort.readable.getReader();
+            portWriter=usbPort.writable.getWriter(); connected=true; usbPort=null;
+            rxPump(); usbLog(`Port open @ ${baud} baud`,'ok');
+            try{
+                await enterRawREPL();
+                const kArr=new Uint8Array(await kmodelBlob.arrayBuffer());
+                const lArr=new Uint8Array(await labelsBlob.arrayBuffer());
+                usbLog('Ensuring /sdcard/kmodel/...','info');
+                await ensureDir('/sdcard/kmodel/');
+                usbLog('Dir ready','ok');
+                usbLog(`Sending pose_model.kmodel → ${(kArr.length/1024).toFixed(1)} KB`,'info');
+                await writeFileOnBoard('/sdcard/kmodel/pose_model.kmodel',kArr,pct=>{
+                    usbSetProgress(1,pct);setStatus(`pose_model.kmodel: ${Math.round(pct*100)}%`);
+                });
+                usbSetProgress(1,1);usbLog('pose_model.kmodel ✓','ok');
+                usbLog('Sending pose_labels.txt...','info');
+                await writeFileOnBoard('/sdcard/kmodel/pose_labels.txt',lArr,pct=>{
+                    usbSetProgress(2,pct);setStatus(`pose_labels.txt: ${Math.round(pct*100)}%`);
+                });
+                usbSetProgress(2,1);usbLog('pose_labels.txt ✓','ok');
+                await exitRawREPL(); usbLog('Done','ok');
+            }finally{await cleanupPort();}
+            setStatus('USB deployment complete!');
+            alert('✅ Pose model deployed via USB!\nFiles: /sdcard/kmodel/');
+        }
+
+    }catch(e){
+        console.error('Deploy error:',e);
+        usbLog('Error: '+e.message,'err');
+        alert('Deploy Failed: '+e.message);
+        setStatus('Deploy failed: '+e.message);
+        if(connected)await cleanupPort();
+        if(usbPort){try{await usbPort.close();}catch{}usbPort=null;}
+    }finally{
+        btn.disabled=false; btn.innerHTML=originalText;
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// EXPORT
+// ──────────────────────────────────────────────────────────────
+async function exportKmodel(){
+    if(!trained||!classifier){alert('Train first!');return;}
+    if(!classifierMatchesClasses()){
+        const shape = classifier.outputs[0].shape;
+        alert(`⚠️ Stale model!\n\nThe trained model has ${shape[shape.length-1]} outputs but you now have ${classes.length} poses.\n\nPress "Train Model" again, then export.`);
+        return;
+    }
+    const btn=document.getElementById('exportBtn');
+    btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Exporting...';
+    setStatus('Exporting pose model...');
+    try{
+        let savedArtifacts=null;
+        await classifier.save(
+            tf.io.withSaveHandler(async artifacts=>{
+                savedArtifacts=artifacts;
+                return{modelArtifactsInfo:{dateSaved:new Date()}};
+            })
+        );
+        if(!savedArtifacts)throw new Error('Failed to save model');
+        const modelJson={
+            modelTopology:savedArtifacts.modelTopology,
+            weightsManifest:[{paths:['weights.bin'],weights:savedArtifacts.weightSpecs}],
+            format:'layers-model',generatedBy:'TensorFlow.js',convertedBy:null
+        };
+        const formData=new FormData();
+        formData.append('model_json',
+            new Blob([JSON.stringify(modelJson)],{type:'application/json'}),'model.json');
+        formData.append('weights_bin',
+            new Blob([savedArtifacts.weightData],{type:'application/octet-stream'}),'weights.bin');
+        formData.append('labels',JSON.stringify(classes.map(c=>c.name)));
+
+        setStatus('Sending to backend...');
+        const resp=await fetch(`${CONVERT_SERVER}/convert-pose`,{method:'POST',body:formData});
+        if(!resp.ok){const err=await resp.json().catch(()=>({error:'Server error'}));
+            throw new Error(err.error||`Error ${resp.status}`);}
+
+        setStatus('Unpacking files...');
+        const zipBlob=await resp.blob(),ct=resp.headers.get('content-type')||'';
+        if(ct.includes('zip')){
+            const zip=await JSZip.loadAsync(zipBlob);
+            const kf=zip.file('model.kmodel');if(kf)downloadBlob(await kf.async('blob'),'pose_model.kmodel');
+            await sleep(500);
+            const lf=zip.file('labels.txt');if(lf)downloadBlob(await lf.async('blob'),'pose_labels.txt');
+        }else{
+            downloadBlob(zipBlob,'pose_model.kmodel'); await sleep(500);
+            downloadBlob(new Blob([classes.map(c=>c.name).join('\n')],{type:'text/plain'}),'pose_labels.txt');
+        }
+        setStatus('pose_model.kmodel and pose_labels.txt downloaded!');
+        alert('✅ Two files:\n1. pose_model.kmodel\n2. pose_labels.txt\n\nCopy to /sdcard/kmodel/ on K230.');
+    }catch(e){
+        console.error('Export error:',e);alert('Export Failed: '+e.message);setStatus('Export failed: '+e.message);
+    }finally{
+        btn.disabled=false; btn.innerHTML='Export .kmodel (Local)';
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// NAVIGATION
+// ──────────────────────────────────────────────────────────────
+function goBack(){
+    stopLivePreview(); stopCamCapture();
+    const payload=JSON.stringify({type:'CLOSE_POSE_TRAIN'});
+    if(window.ReactNativeWebView){
+        window.ReactNativeWebView.postMessage(payload);
+    } else if(window.parent !== window){
+        window.parent.postMessage(payload,'*');
+        window.opener?.postMessage(payload,'*');
+    } else {
+        // Standalone browser — navigate back to workspace
+        window.location.href = 'index.html';
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// INIT
+// ──────────────────────────────────────────────────────────────
+classes.forEach(c=>{ classCounts[c.name]=0; });
+render();
+loadBaseModel();
+</script>
+</body>
+</html>

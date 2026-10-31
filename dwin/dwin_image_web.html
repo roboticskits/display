@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DWIN Image Sender</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --ink: #1d2330; --muted: #677085; --line: #dfe3ea;
+    --accent: #5b3fd6; --accent-ink: #ffffff; --ok: #1c8a4a; --err: #c0392b; --warn-bg: #fff4d6; --warn-ink: #6b4e00;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b; --card: #1d2027; --ink: #e7e9ee; --muted: #9aa2b2; --line: #2e323b;
+      --accent: #8b74ff; --accent-ink: #ffffff; --ok: #4cc27f; --err: #ff7a6b; --warn-bg: #3a3014; --warn-ink: #f3d98b;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  main { max-width: 560px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1 1 auto; }
+  button {
+    font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button:disabled { opacity: .45; cursor: default; }
+  select { font: inherit; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  label.check { color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+  #drop {
+    position: relative; border: 2px dashed var(--line); border-radius: 10px; overflow: hidden;
+    background: #000; aspect-ratio: 3 / 2; cursor: pointer; margin-bottom: 12px;
+  }
+  #drop.over { border-color: var(--accent); }
+  #preview { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  #drop .hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa3b5; text-align: center; padding: 16px; }
+  progress { width: 100%; height: 10px; margin-top: 12px; }
+  #status { margin-top: 8px; color: var(--muted); min-height: 1.4em; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #9aa2b2; display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--ok); }
+  .warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  details { margin-top: 4px; color: var(--muted); }
+  pre#log { max-height: 180px; overflow: auto; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 8px; margin: 6px 0 0; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DWIN Image Sender</h1>
+  <p class="sub">Sends a picture from this browser to the STM32 board over USB (Web Serial). The board draws it on the DWIN display through UART1. No SD card needed.</p>
+
+  <div id="unsupported" class="warn" hidden>
+    This page needs <b>Chrome or Edge</b> on a computer, because it uses Web Serial.
+    Open the file in one of those browsers.
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span><span id="dot" class="dot"></span><span id="conn">Not connected</span></span>
+      <span class="grow"></span>
+      <label class="check"><input type="checkbox" id="all"> show all ports</label>
+      <button id="btnConnect" class="primary">Connect board</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="drop" title="Click or drop an image here">
+      <canvas id="preview" width="480" height="320"></canvas>
+      <div class="hint" id="hint">Click to choose an image, or drop one here</div>
+    </div>
+    <input type="file" id="file" accept="image/*" hidden>
+    <div class="row">
+      <select id="size">
+        <option value="normal">Normal 160 x 106, fills the screen (about 9 s)</option>
+        <option value="fast">Fast 120 x 80, centred (about 5 s)</option>
+      </select>
+      <span class="grow"></span>
+      <button id="btnShow" class="primary" disabled>Show on display</button>
+    </div>
+    <progress id="prog" max="100" value="0"></progress>
+    <div id="status">Connect the board, then choose an image.</div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="btnClear" disabled>Clear picture</button>
+      <button id="btnHome" disabled>Display home page</button>
+      <span class="grow"></span>
+      <button id="btnBye" disabled>Disconnect and reset board</button>
+    </div>
+    <details>
+      <summary>Log</summary>
+      <pre id="log"></pre>
+    </details>
+  </div>
+</main>
+
+<!-- The board-side relay (img_relay.py), embedded by build_web.py. -->
+<script type="text/plain" id="relay-src">"""Image relay: receives a picture from the PC over USB and draws it on the
+DWIN display through UART1 using the two Basic Graphic controls on page 39.
+
+Each control keeps its dot list in the display's variable memory, so the
+picture stays on screen: VP = command 0x0001, VP+1 = dot count,
+VP+2.. = x, y, colour per dot, then an FFFF terminator.
+
+Started by the PC app (dwin_image_app.py). Protocol from the PC, binary:
+  b"IMG1" + x(2) y(2) w(2) h(2) step(1)   + w*h*2 bytes RGB565 big-endian
+             step = size of each dot on screen (3 = 3x3 pixels)
+  b"CLR1"                               clear the viewer page
+  b"PAG1" + page(2)                     switch display page
+  b"PNG1"                               ping, replies PONG
+  b"BYE1"                               leave the relay (also after 10 min idle)
+Replies are text lines: READY, P<percent>, DONE <ms>, OK, ERR <text>.
+"""
+import pyb, time, struct, micropython
+from machine import UART
+
+REGIONS = ((0x1000, 6900), (0x8400, 10560))     # (VP, max dots that fit)
+PAGE = 39
+DOTS_PER_FRAME = 40
+
+usb = pyb.USB_VCP()
+usb.setinterrupt(-1)                    # binary data may contain Ctrl-C
+try:
+    import __main__
+    __main__.stop_checker.deinit()      # the Blockly engine's USB watcher
+except Exception:
+    pass
+u = UART(1, 115200, timeout=0, rxbuf=1024)
+
+
+def recv(n, timeout_ms=5000):
+    buf = bytearray(n)
+    mv = memoryview(buf)
+    got = 0
+    t0 = time.ticks_ms()
+    while got < n:
+        k = usb.recv(mv[got:], timeout=200)
+        if k:
+            got += k
+            t0 = time.ticks_ms()
+        elif time.ticks_diff(time.ticks_ms(), t0) > timeout_ms:
+            raise OSError("timeout")
+    return buf
+
+
+ACK = b"\x5a\xa5\x03\x82\x4f\x4b"
+lost = 0
+
+
+def send(frame):
+    """Write one frame and wait for the display's OK; resend if it is lost."""
+    global lost
+    for attempt in range(3):
+        u.write(frame)
+        t0 = time.ticks_ms()
+        got = b""
+        while time.ticks_diff(time.ticks_ms(), t0) < 40:
+            n = u.any()
+            if n:
+                got += u.read(n)
+                if ACK in got:
+                    return
+        lost += 1
+
+
+def write_vp(vp, data):
+    send(bytes((0x5A, 0xA5, 3 + len(data), 0x82, vp >> 8, vp & 0xFF)) + data)
+
+
+def set_page(p):
+    write_vp(0x0084, bytes((0x5A, 0x01, p >> 8, p & 0xFF)))
+
+
+def clear():
+    for vp, _ in REGIONS:
+        write_vp(vp, struct.pack(">HH", 1, 0) + b"\xff\xff")   # zero dots
+
+
+@micropython.viper
+def _fill_dots(out: ptr8, src: ptr8, n: int, x0: int, step: int, y: int):
+    o = 0
+    for i in range(n):
+        x = x0 + i * step
+        out[o] = x >> 8
+        out[o + 1] = x & 0xFF
+        out[o + 2] = y >> 8
+        out[o + 3] = y & 0xFF
+        out[o + 4] = src[2 * i]
+        out[o + 5] = src[2 * i + 1]
+        o += 6
+
+
+def draw_image(x0, y0, w, h, step, pixels):
+    """Rows are split across the two regions; dots are stored permanently."""
+    frame = bytearray(6 + 6 * DOTS_PER_FRAME)
+    frame[0:4] = bytes((0x5A, 0xA5, 0, 0x82))
+    mv = memoryview(frame)
+    body = mv[6:]
+    pix = memoryview(pixels)
+    rows_a = min(h, REGIONS[0][1] // w)
+    if (h - rows_a) * w > REGIONS[1][1]:
+        raise ValueError("image too big for display memory")
+    plan = ((REGIONS[0][0], 0, rows_a), (REGIONS[1][0], rows_a, h))
+    last_pct = -1
+    t0 = time.ticks_ms()
+    for vp, r0, r1 in plan:
+        write_vp(vp, struct.pack(">HH", 1, (r1 - r0) * w))     # command + count
+        addr = vp + 2
+        for j in range(r0, r1):
+            y = y0 + j * step
+            row = pix[j * w * 2:(j + 1) * w * 2]
+            i = 0
+            while i < w:
+                n = w - i
+                if n > DOTS_PER_FRAME:
+                    n = DOTS_PER_FRAME
+                _fill_dots(body, row[2 * i:], n, x0 + i * step, step, y)
+                end = 6 + 6 * n
+                frame[2] = end - 3
+                frame[4] = addr >> 8
+                frame[5] = addr & 0xFF
+                send(mv[:end])
+                addr += 3 * n
+                i += n
+            pct = (j + 1) * 100 // h
+            if pct != last_pct and pct % 2 == 0:
+                usb.write(b"P%d\n" % pct)
+                last_pct = pct
+        write_vp(addr, b"\xff\xff")                             # terminator
+    return time.ticks_diff(time.ticks_ms(), t0)
+
+
+def main():
+    usb.write(b"READY\n")
+    while True:
+        try:
+            cmd = bytes(recv(4, 600000))
+        except OSError:
+            usb.write(b"ERR idle timeout\n")
+            return
+        try:
+            if cmd == b"IMG1":
+                x, y, w, h, step = struct.unpack(">HHHHB", recv(9))
+                pixels = recv(w * h * 2, 20000)
+                set_page(PAGE)
+                time.sleep_ms(60)
+                global lost
+                lost = 0
+                ms = draw_image(x, y, w, h, step, pixels)
+                usb.write(b"DONE %d lost=%d\n" % (ms, lost))
+            elif cmd == b"CLR1":
+                set_page(PAGE)
+                time.sleep_ms(60)
+                clear()
+                usb.write(b"OK\n")
+            elif cmd == b"PAG1":
+                (p,) = struct.unpack(">H", recv(2))
+                set_page(p)
+                usb.write(b"OK\n")
+            elif cmd == b"PNG1":
+                usb.write(b"PONG\n")
+            elif cmd == b"BYE1":
+                usb.write(b"OK\n")
+                return
+            else:
+                usb.write(b"ERR bad command\n")
+        except Exception as e:
+            usb.write(b"ERR %s\n" % str(e).encode())
+
+
+main()
+</script>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const SIZES = { normal: [160, 106], fast: [120, 80] };
+const STEP = 3;            // each image pixel is a 3 x 3 dot on the display
+const HOME_PAGE = 10;
+const STOP_ENGINE = "import __main__\ntry:\n    __main__.stop_checker.deinit()\nexcept Exception:\n    pass\n";
+const te = new TextEncoder();
+const td = new TextDecoder();
+
+let port = null, writer = null, reader = null, readLoopDone = null;
+let rx = new Uint8Array(0);
+let wakers = [];
+let image = null;          // ImageBitmap of the chosen picture
+let busy = false;
+
+// ---------------------------------------------------------------- helpers
+function log(msg) {
+  const el = $("#log");
+  el.textContent += msg + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+function setStatus(msg, kind = "") {
+  const el = $("#status");
+  el.textContent = msg;
+  el.className = kind;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function updateButtons() {
+  const on = !!port;
+  $("#btnConnect").textContent = on ? "Connected" : "Connect board";
+  $("#btnConnect").disabled = on || busy;
+  $("#btnShow").disabled = !on || !image || busy;
+  $("#btnClear").disabled = !on || busy;
+  $("#btnHome").disabled = !on || busy;
+  $("#btnBye").disabled = !on || busy;
+  $("#dot").className = on ? "dot on" : "dot";
+  $("#conn").textContent = on ? "Board connected" : "Not connected";
+}
+
+// ---------------------------------------------------------------- serial I/O
+function push(chunk) {
+  const n = new Uint8Array(rx.length + chunk.length);
+  n.set(rx);
+  n.set(chunk, rx.length);
+  rx = n;
+  wakers.splice(0).forEach((f) => f());
+}
+function waitData(ms) {
+  return new Promise((res) => {
+    const t = setTimeout(res, ms);
+    wakers.push(() => { clearTimeout(t); res(); });
+  });
+}
+function indexOf(hay, needle) {
+  outer: for (let i = 0; i <= hay.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+async function waitFor(pattern, timeout) {
+  const pat = te.encode(pattern);
+  const end = performance.now() + timeout;
+  for (;;) {
+    const i = indexOf(rx, pat);
+    if (i >= 0) {
+      const out = rx.slice(0, i + pat.length);
+      rx = rx.slice(i + pat.length);
+      return td.decode(out);
+    }
+    const left = end - performance.now();
+    if (left <= 0) throw new Error("timeout waiting for " + JSON.stringify(pattern));
+    await waitData(left);
+  }
+}
+async function readLine(timeout) {
+  return (await waitFor("\n", timeout)).trim();
+}
+async function write(data) {
+  await writer.write(typeof data === "string" ? te.encode(data) : data);
+}
+async function readLoop() {
+  while (port && port.readable) {
+    reader = port.readable.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) push(value);
+      }
+    } catch (e) {
+      log("read stopped: " + e.message);
+      break;
+    } finally {
+      try { reader.releaseLock(); } catch (e) {}
+    }
+    if (!port) break;
+  }
+}
+
+// ---------------------------------------------------------------- board protocol
+async function enterRaw() {
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    await write(new Uint8Array([13, 3]));      // Ctrl-C stops the board's program
+    await sleep(120);
+    await write(new Uint8Array([3]));
+    await sleep(350);
+    rx = new Uint8Array(0);
+    await write(new Uint8Array([1]));          // Ctrl-A: raw REPL
+    try {
+      await waitFor("raw REPL; CTRL-B to exit\r\n>", 1500);
+      return;
+    } catch (e) {
+      log("board prompt attempt " + attempt + " failed");
+    }
+  }
+  throw new Error("could not reach the board's MicroPython prompt");
+}
+async function execRaw(code, waitEnd = true) {
+  const data = te.encode(code);
+  for (let i = 0; i < data.length; i += 256) {
+    await write(data.slice(i, i + 256));
+    await sleep(8);
+  }
+  await write(new Uint8Array([4]));            // Ctrl-D: run
+  await waitFor("OK", 3000);
+  if (!waitEnd) return null;
+  const out = await waitFor("\x04", 5000);
+  const err = await waitFor("\x04>", 5000);
+  return { out: out.slice(0, -1), err: err.slice(0, -2) };
+}
+async function startRelay() {
+  await enterRaw();
+  const r = await execRaw(STOP_ENGINE);
+  if (r && r.err.trim()) log("engine stop note: " + r.err.trim());
+  await execRaw($("#relay-src").textContent, false);
+  await waitFor("READY\n", 8000);
+  log("relay running on the board");
+}
+async function ensureRelay() {
+  rx = new Uint8Array(0);
+  await write("PNG1");
+  try {
+    await waitFor("PONG\n", 1500);
+    return;
+  } catch (e) {
+    log("relay not running, starting it");
+  }
+  await startRelay();
+}
+
+// ---------------------------------------------------------------- image
+function convert(bitmap, w, h) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, w, h);
+  const s = Math.min(w / bitmap.width, h / bitmap.height);
+  const dw = bitmap.width * s, dh = bitmap.height * s;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(bitmap, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  const d = g.getImageData(0, 0, w, h).data;
+  const px = new Uint8Array(w * h * 2);
+  for (let i = 0, j = 0; i < d.length; i += 4, j += 2) {
+    const v = ((d[i] & 0xf8) << 8) | ((d[i + 1] & 0xfc) << 3) | (d[i + 2] >> 3);   // RGB565
+    px[j] = v >> 8;
+    px[j + 1] = v & 0xff;
+  }
+  return { canvas: c, pixels: px };
+}
+function drawPreview() {
+  const p = $("#preview").getContext("2d");
+  p.fillStyle = "#000";
+  p.fillRect(0, 0, 480, 320);
+  if (!image) return;
+  const [w, h] = SIZES[$("#size").value];
+  const { canvas } = convert(image, w, h);
+  p.imageSmoothingEnabled = false;            // show the 3 x 3 dot look
+  p.drawImage(canvas, (480 - w * STEP) >> 1, (320 - h * STEP) >> 1, w * STEP, h * STEP);
+  $("#hint").hidden = true;
+}
+async function loadFile(file) {
+  if (!file) return;
+  try {
+    image = await createImageBitmap(file);
+    drawPreview();
+    setStatus(file.name + " ready" + (port ? ". Press Show on display." : ". Connect the board."));
+  } catch (e) {
+    setStatus("Could not read that image: " + e.message, "err");
+  }
+  updateButtons();
+}
+
+// ---------------------------------------------------------------- actions
+async function run(label, fn) {
+  if (busy) return;
+  busy = true;
+  updateButtons();
+  try {
+    await fn();
+  } catch (e) {
+    log(label + " failed: " + e.message);
+    setStatus(label + " failed: " + e.message, "err");
+  } finally {
+    busy = false;
+    updateButtons();
+  }
+}
+async function connect() {
+  const filters = $("#all").checked ? [] : [{ usbVendorId: 0xf055 }];
+  const p = await navigator.serial.requestPort({ filters });
+  await p.open({ baudRate: 115200 });
+  port = p;
+  writer = port.writable.getWriter();
+  readLoopDone = readLoop();
+  updateButtons();
+  setStatus("Starting the image relay on the board...");
+  await startRelay();
+  setStatus(image ? "Connected. Press Show on display." : "Connected. Choose an image.", "ok");
+}
+async function showImage() {
+  const [w, h] = SIZES[$("#size").value];
+  const { pixels } = convert(image, w, h);
+  await ensureRelay();
+  const x = (480 - w * STEP) >> 1, y = (320 - h * STEP) >> 1;
+  const hdr = new Uint8Array(13);
+  const dv = new DataView(hdr.buffer);
+  hdr.set(te.encode("IMG1"));
+  dv.setUint16(4, x);
+  dv.setUint16(6, y);
+  dv.setUint16(8, w);
+  dv.setUint16(10, h);
+  dv.setUint8(12, STEP);
+  $("#prog").value = 0;
+  setStatus("Sending " + w + " x " + h + "...");
+  rx = new Uint8Array(0);
+  await write(hdr);
+  await write(pixels);
+  for (;;) {
+    const line = await readLine(90000);
+    if (/^P\d+$/.test(line)) {
+      $("#prog").value = parseInt(line.slice(1), 10);
+    } else if (line.startsWith("DONE")) {
+      $("#prog").value = 100;
+      const ms = line.split(" ")[1];
+      log(line);
+      setStatus("Shown on the display (" + (ms / 1000).toFixed(1) + " s).", "ok");
+      return;
+    } else if (line.startsWith("ERR")) {
+      throw new Error(line);
+    }
+  }
+}
+async function simple(cmd, extra, okMsg) {
+  await ensureRelay();
+  rx = new Uint8Array(0);
+  const data = new Uint8Array(4 + extra.length);
+  data.set(te.encode(cmd));
+  data.set(extra, 4);
+  await write(data);
+  const line = await readLine(5000);
+  if (!line.startsWith("OK")) throw new Error(line || "no reply");
+  setStatus(okMsg, "ok");
+}
+async function closePort() {
+  const p = port;
+  port = null;
+  try { if (reader) await reader.cancel(); } catch (e) {}
+  try { if (readLoopDone) await readLoopDone; } catch (e) {}
+  try { if (writer) writer.releaseLock(); } catch (e) {}
+  try { if (p) await p.close(); } catch (e) {}
+  writer = reader = readLoopDone = null;
+  updateButtons();
+}
+async function disconnect() {
+  try {
+    rx = new Uint8Array(0);
+    await write("BYE1");
+    try { await readLine(1500); } catch (e) {}
+    await enterRaw();
+    await write("import machine\nmachine.reset()\n");
+    await write(new Uint8Array([4]));
+    await sleep(300);
+  } catch (e) {
+    log("reset: " + e.message);
+  }
+  await closePort();
+  setStatus("Disconnected. The board restarted and its normal program is running.");
+}
+
+// ---------------------------------------------------------------- wiring
+if (!("serial" in navigator)) {
+  $("#unsupported").hidden = false;
+  $("#btnConnect").disabled = true;
+  setStatus("Web Serial is not available in this browser.", "err");
+} else {
+  navigator.serial.addEventListener("disconnect", (e) => {
+    if (port && e.target === port) {
+      closePort();
+      setStatus("The board was unplugged or reset.", "err");
+    }
+  });
+}
+$("#btnConnect").onclick = () => run("Connect", connect);
+$("#btnShow").onclick = () => run("Send", showImage);
+$("#btnClear").onclick = () => run("Clear", () => simple("CLR1", new Uint8Array(0), "Picture cleared."));
+$("#btnHome").onclick = () => run("Home", () => simple("PAG1", new Uint8Array([0, HOME_PAGE]), "Display is on its home page."));
+$("#btnBye").onclick = () => run("Disconnect", disconnect);
+$("#size").onchange = drawPreview;
+$("#drop").onclick = () => $("#file").click();
+$("#file").onchange = (e) => loadFile(e.target.files[0]);
+$("#drop").ondragover = (e) => { e.preventDefault(); $("#drop").classList.add("over"); };
+$("#drop").ondragleave = () => $("#drop").classList.remove("over");
+$("#drop").ondrop = (e) => {
+  e.preventDefault();
+  $("#drop").classList.remove("over");
+  loadFile(e.dataTransfer.files[0]);
+};
+drawPreview();
+updateButtons();
+</script>
+</body>
+</html>
